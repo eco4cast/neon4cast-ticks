@@ -1,0 +1,20 @@
+taxon_id,taxon_rank,taxon_name
+IXOSP2,order,Ixodida sp.
+IXOSP,family,Ixodidae sp.
+IXOSPP,family,Ixodidae spp.
+IXOSCA,species,Ixodes scapularis
+AMBAME,species,Amblyomma americanum
+IXOSPP1,genus,Ixodes spp.
+IXOANG,species,Ixodes angustus
+IXOPAC,species,Ixodes pacificus
+DERVAR,species,Dermacentor variabilis
+HAELON,species,Haemaphysalis longicornis
+IXODEN,species,Ixodes dentatus
+IXOAFF,species,Ixodes affinis
+AMBSP,genus,Amblyomma sp.
+IXOMUR,species,Ixodes muris
+HAELEP,species,Haemaphysalis leporispalustris
+DERAND,species,Dermacentor andersoni
+AMBSPP,genus,Amblyomma spp.
+IXOMAR1,species,Ixodes marxi
+AMBMAC,species,Amblyomma maculatum

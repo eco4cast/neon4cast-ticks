@@ -1,0 +1,845 @@
+---
+title: "Tick Abundance and Borrelia Prevalence Forecasting"
+author: "M.Y. Chen, W.E. Moss, B.K. Hobart, M.E. Bitters"
+date: "4/29/2020"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load libraries
+```{r, message = FALSE, warning = FALSE}
+library(dplyr)
+library(tidyverse)
+library(forcats)
+library(lubridate)
+library(ggthemes)  # for a mapping theme
+library(ggalt)  # for custom map projections
+library(viridis)
+library(ggrepel)  # for annotations
+library(png)
+library(jpeg)
+library(mgcv) # fitting GAMS
+library(tidyr)
+library(broom) # glance function for model output
+library(ggplot2)
+library(stringr)
+library(RColorBrewer)
+library(caret) # confusion matrix
+library(brms) # for Bayesian fitting of GAMS
+library(boot) # for invlogit
+
+```
+
+***
+
+# Tick and *Borrelia* Background
+
+Lyme disease is the most common vector-borne disease in the U.S. and has been the subject of intense research for the last several decades. The disease is caused by a bacterial spirochete (*Borrelia* species) that is vectored by ticks (primarily *Ixodes scapularis*) Dozens of studies have addressed local- and landscape-scale factors that drive the dynamics of this system, with mixed success. Here, we aimed to use National Ecological Observatory Network (NEON) data to tease apart the factors important to spatiotemporal variability in (i) tick abundance and (ii) *Borrelia* prevalence, which together determine human Lyme risk.
+
+## Ecology of *Ixodes scapularis* & *Borrelia*
+
+### *I. scapularis*
+*I. scapularis* primary inhabits the eastern U.S. and has a ~2 year life cycle. **Eggs** are laid in spring of year *t* and hatch into **larvae** in summer of the same year. Larvae take a single bloodmeal (typically from a small mammal) in summer of year *t* and overwinter. Larvae then molt into **nymphs** in the late spring/early summer of year *t*+1. Nymphal ticks take a single bloodmeal in late spring/summer (typically from a small mammal, but also birds and reptiles). In autumn of year *t*+1, nymphs molt into **adults**. In late autumn/early winter of year *t*+1, adult ticks find an appropriate large mammal host (often deer) where the female takes a bloodmeal and sexual reproduction occurs. Eggs are laid the following spring, and the cycle repeats.
+
+Numerous aspects of the abiotic environment can control *I. scapularis* distribution and abundance, including temperature and humidity which jointly drive the risk of dessication. Yet, broad population patterns of *I. scapularis* most closely correlate with the distribution of forests because the most important hosts for both larvae/nymphs and adults (white-footed mice and deer, respectively) rely heavily on forested habitats. Within forested areas, temporal variability may be introduced by processes driving changes in host populations, most notably acorn masting patterns. There are thus temporal and spatial considerations *I. scapularis* presence and abundance.
+
+### *Borrelia*
+
+*Borrelia* is vectored by ticks, with numerous reservoirs (though, most often small rodents). Tick eggs are virtually Borrelia-free---in other words the bacteria is not vertically transmitted. Tick larvae and nymphs may become infected with *Borrelia* when taking bloodmeals from infected reservoirs. Adult hosts (e.g., deer) tend not to be reservoirs for *Borrelia*, and thus host--parasite dynamics in this system are limited primarily to interactions involving larval or nymphal ticks and reservoir hosts. 
+
+Because larvae are never infected prior to their bloodmeal (and only take 1 bloodmeal), they cannot transmit *Borrelia* to hosts and thus pose little threat to humans. Conversely, if larvae become infected during their bloodmeal, successfully molt into a nymph, and take a bloodmeal from a susceptible host they can transmit the infection. Owing to this and their small size (~1 mm) nyphal ticks pose the largest threat to human health via transmission of *Borrelia*. Infected adult ticks may also transmit *Borrelia* to humans but are conspicuous and more easily removed.
+
+For these reasons, the density of infected nymphs (D.O.N.) of *I. scapularis* is the most common and successful index of Lyme risk. Understanding what drives D.O.N. requires understanding what drives both nymphal density *and* nymphal infection prevalence.
+
+***
+
+### National Ecological Observatory Network (NEON) Tick Sampling
+
+The National Ecological Observatory Network (NEON) is a long-term, large-scale, NSF-funded project with the goal to monitor global change at a continental scale. NEON's sampling design provides a unique opportunity to examine large spatial and temporal scale questions about hosts, vectors, and parasites as they all respond to environmental change in different ways.
+
+NEON is organized into 20 domains, which were delineated based on ecoclimatic state variables. Within each domain, there is one terrestrial core site and one or two terrestrial relocatable sites. Sites encompass much of the diversity that exists in North America - sites exists at sea level to 12,000 ft above sea level, in temperate and tropical forests, and in desert and mountain ecosystems. Sites are further stratified into plots, which encompass local scale variation.
+
+NEON tick sampling uses the dragging and flagging method, which is arguably the most commonly used method to sample ticks. This method is effective for catching questing ticks, so it most closely approximates the human risk of picking up ticks from the environment. To sample, a 1 m^2 piece of white cloth is dragged along the ground at a slow pace along the border of a 40x40 m tick plot. It is examined every 5-10 m, and any adult, nymph, and larval ticks are removed and collected in 95% EtOH. Flagging is used when vegetation prevents the drag sampling. Sampling frequency occurs once every six weeks until one or more ticks are collected at a site. Once at least one tick is collected, sampling frequency increases to once every three weeks. Sampling is only conducted when the high temperature on the previous day was >0 degC and the mean temperature for the previous five days was >7 degC. 
+
+Collected ticks are sent to external facilities for taxonomic identification at the adult and nymph level and pathogen testing. Following identification, ticks are combined by species, life stage, site, and sampling event and tested for pathogens. Actual sample size depends on the sampling event success, but for any species/life stage combination, a minimum of 10 and target of 100 individuals per site/sampling event combination is recommended. 
+
+***
+
+# Tick Data Exploration
+
+## Load data & set up
+```{r, warning = FALSE, message = FALSE, include = FALSE}
+## all domains
+# read.csv("complete_data_IXOSCA.csv") %>%
+#    filter(!is.na(rawCount)) -> tickAbund
+# 
+# ## add column w/ tick max by domain
+# tickAbund %>% group_by(domainID) %>%
+#    mutate(domainMax=max(rawCount)) %>%
+#    ungroup() -> tickAbund
+# 
+# ## add domain-site
+# tickAbund$domainSite <- paste(tickAbund$domainID, tickAbund$siteID)
+# 
+# ## add domain-site-plot
+# tickAbund$domainSitePlot <- paste(tickAbund$domainID,
+#                                   tickAbund$siteID, tickAbund$plotID)
+# 
+# saveRDS(tickAbund, "data/tickAbund_eda.Rdata")
+tickAbund <- readRDS("data/tickAbund_eda.Rdata")
+### Plot theme (stolen from WEM, who prob stole it from that tutorial) ###
+theme_tick <- function(){
+  theme_bw() +
+    theme(axis.text = element_text(size = 11), 
+          axis.title = element_text(size = 14),
+          axis.line.x = element_line(color="black"), 
+          axis.line.y = element_line(color="black"),
+          panel.border = element_blank(),
+          panel.grid.major.x = element_blank(),                                          
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          panel.grid.major.y = element_blank(),  
+          plot.margin = unit(c(1, 1, 1, 1), units = , "cm"),
+          plot.title = element_text(size = 16, vjust = 1, hjust = 0),
+          legend.text = element_text(size = 9),          
+          legend.title = element_blank(),                              
+          legend.position = "bottom", 
+          legend.key = element_blank(),
+          legend.background = element_rect(color = "black", 
+                                           fill = "transparent", 
+                                           size = 2, linetype = "blank"))
+}
+
+## load raincloud function
+source("https://gist.githubusercontent.com/benmarwick/2a1bb0133ff568cbe28d/raw/fb53bd97121f7f9ce947837ef1a4c65a73bffb3f/geom_flat_violin.R")
+
+### Mapping set up ###
+north_america <- map_data("world", region = c("USA"))
+north_america <- north_america[!(north_america$subregion %in% "Hawaii"),]
+```
+
+
+We limited all analyses to *I. scapularis* nymphs, which are the primary vector of human Lyme and for which there were plentiful NEON data. Formal analyses (W.E.M.) used tick *density*, in which raw tick counts were scaled by drag length, but because drag lengths were fairly consistent across space/time (see plot directly below) and because raw counts are easier to intepret than densities, the former is displayed in exploratory maps/plots below.
+
+## Survey Effort
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot() +
+   geom_line(data=tickAbund %>% filter(!is.na(rawCount)) %>%
+                group_by(siteID, month) %>%
+                summarise(meanMonthAbund = mean(totalSampledArea), fmonth=first(month)) %>%
+                ungroup(), 
+             aes(x=fmonth, y=meanMonthAbund, colour=siteID),
+             size=1) +
+   theme_tick() +
+   theme(legend.position = "none") +
+   labs(x="Month",y="Mean Drag Length") +
+   ggtitle("Survey effort across months",
+           subtitle = "Colour denotes site")  +
+   scale_x_continuous(breaks=c(2,4,6,8,10,12))
+```
+
+## Spatial variation in ticks
+
+A good starting place is to consider which NEON sites across the U.S. even have *I. scapularis* by plotting mean count per survey.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot() +
+   geom_map(map=north_america, data=north_america,
+            aes(map_id=region),
+            colour="black", fill="gray80", size=.3) +
+   ylim(c(25, 50)) +
+   xlim(c(-125, -65)) +
+   geom_point(data = tickAbund %>% filter(!is.na(rawCount)) %>%
+                 group_by(siteID) %>%
+                 summarise(meanAbund = mean(rawCount), lat=first(decimalLatitude), lon=first(decimalLongitude)) %>% 
+                 ungroup(), 
+              aes(x = lon, y = lat, fill = meanAbund),
+              alpha = 0.8, size = 4, colour = "grey30",
+              shape = 21) +
+   scale_fill_viridis(option = "magma", direction = -1, begin = 0.2)+
+   theme_tick()+
+   theme(plot.title = element_text(hjust =0.5), axis.ticks = element_blank(), axis.text = element_blank(),
+         legend.position = "none")+
+   xlab("")+
+   ylab("")+
+   ggtitle("Mean I. scapularis Count by Site")
+```
+
+We can see that, largely, *I. scapularis* is restricted to east of the Mississippi River.
+
+
+Zooming in on the eastern half of the country, we can also see enormous plot-level variability in tick count per survey.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot() +
+   geom_map(map=north_america, data=north_america,
+            aes(map_id=region),
+            colour="black", fill="gray80", size=.3) +
+   ylim(c(25, 50)) +
+   xlim(c(-95, -65)) +
+   geom_point(data = tickAbund %>% filter(!is.na(rawCount)) %>%
+                 group_by(plotID) %>%
+                 summarise(meanAbund = mean(rawCount), lat=first(decimalLatitude), lon=first(decimalLongitude)) %>%
+                 ungroup(), 
+              aes(x = jitter(lon, amount=.5), y = jitter(lat, amount=.5), fill = meanAbund),
+              alpha = 0.8, size = 4, colour = "grey30",
+              shape = 21) +
+   scale_fill_viridis(option = "magma", direction = -1, begin = 0.2)+
+   theme_tick()+
+   theme(plot.title = element_text(hjust =0.5), axis.ticks = element_blank(), axis.text = element_blank(),
+         legend.position = "none")+
+   xlab("")+
+   ylab("")+
+   ggtitle("Mean I. scapularis Count by \n Plot within Site (jittered)")
+```
+
+
+Can also view the distribution of count data across these scales. First, let's look at domain-level.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot(data=tickAbund,
+       aes(x=reorder(domainID, desc(rawCount)), y=rawCount)) +
+   geom_flat_violin(position=position_nudge(x=0.2,y=0), alpha=0.8) +
+   geom_point(aes(y=rawCount, color=domainID),
+              position=position_jitter(width=0.15), size=1, alpha=0.1) +
+   geom_boxplot(width=0.2, outlier.shape=NA, alpha=0.8) +
+   labs(y="Tick Count", x="NEON Domain") +
+   guides(fill=FALSE, color=FALSE) +
+   scale_y_continuous(limits=c(0,2500)) +
+   coord_flip() +
+   theme_tick() +
+   ggtitle("By Domain")
+```
+
+We can see that there are relatively few domains with *I. scapularis* and that there are some surveys that yielded extremely high nymph counts (~2500).
+
+If we next consider plots within domains, we can furher see that even where ticks are detected and sometimes abundant, most surveys still yield counts of 0.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot(data=filter(tickAbund, domainMax>0),
+       aes(x=domainSite, y=rawCount)) +
+   geom_flat_violin(position=position_nudge(x=0.2,y=0), alpha=0.8) +
+   geom_point(aes(y=rawCount, color=domainID),
+              position=position_jitter(width=0.015, height=.01), 
+              size=2, alpha=0.1) +
+   geom_boxplot(width=0.2, outlier.shape=NA, alpha=0.8) +
+   labs(y="Tick Count", x="NEON Site") +
+   guides(fill=FALSE, color=FALSE) +
+   scale_y_continuous(limits=c(0,100)) +
+   coord_flip() +
+   theme_tick() +
+   theme(axis.text.y = element_blank(),
+         axis.ticks.y = element_blank()) +
+   ggtitle("Site within Domain",
+           subtitle = "Colour denotes domain")
+```
+
+Note the x-axis range is restricted here to easier view the distribution of counts.
+
+The final scale of consideration is plots within sites, where we also see high levels of variation.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot(data=filter(tickAbund, domainMax>0),
+       aes(x=domainSitePlot, y=rawCount)) +
+   geom_flat_violin(position=position_nudge(x=0.2,y=0), alpha=0.8) +
+   geom_point(aes(y=rawCount, color=domainID),
+              position=position_jitter(width=0.015, height=.01), 
+              size=2, alpha=0.1) +
+   geom_boxplot(width=0.2, outlier.shape=NA, alpha=0.8) +
+   labs(y="Tick Count", x="NEON Plot") +
+   guides(fill=FALSE, color=FALSE) +
+   scale_y_continuous(limits=c(0,100)) +
+   coord_flip() +
+   theme_tick() +
+   theme(axis.text.y = element_blank(),
+         axis.ticks.y = element_blank()) +
+   ggtitle("Plot within Site within Domain",
+           subtitle="Colour denotes domain")
+```
+
+
+Exercises like these lead to several decisions:
+(i) exclude domains with no ticks
+(ii) within-site variability makes the use of latitude & longitude somewhat meaningless
+
+
+## Temporal variability
+
+As mentioned above, there are strong seasonal patterns in tick abundance owing to life cycle dynamics.
+
+Although some annual variation exists and should be accounted for, the most prominent feature of the data is the annual peak in *I. scapularis* nymphal abundance.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+ggplot() +
+   geom_line(data=tickAbund %>% filter(domainMax>0) %>%
+                group_by(plotID, month) %>%
+                summarise(meanMonthAbund = mean(rawCount), fmonth=first(month)) %>%
+                ungroup(), 
+             aes(x=fmonth, y=meanMonthAbund, colour=plotID),
+             size=1) +
+   theme_tick() +
+   theme(legend.position = "none") +
+   labs(x="Month", y="Mean Count") +
+   ggtitle("I. scapularis Count by Month",
+           subtitle = "Colour denotes plot") +
+   scale_x_continuous(breaks=c(2,4,6,8,10,12))
+```
+
+This pattern raises several important points:
+(i) there is a pretty clear split between "tick season" and "non-tick season"
+(ii) there is a unimodal hump-shaped peak in nymph populations within that "tick season"
+
+Yet, we still see plot-level variability. One important consideration that ties back to spatial patterns is habitat. We can split this temporal plot out by different NLCD classes to see some important patterns.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# WEM edited this to make run
+ggplot(data=tickAbund %>% filter(domainMax>0) %>%
+                group_by(nlcdClass, month, domainID) %>%
+                summarise(meanMonthAbund = mean(rawCount), fmonth=first(month),
+                          nlcd=first(nlcdClass), domain=first(domainID)) %>%
+                ungroup()) +
+   geom_line(aes(x=fmonth, y=meanMonthAbund, colour=domain),
+             size=1) +
+   facet_wrap(~reorder(nlcd, desc(meanMonthAbund)), drop = TRUE) +
+   theme_tick() +
+   theme(legend.position = "none") +
+   labs(x="Month", y="Mean Count") +
+   ggtitle("I. scapularis across NLCD classes",
+           subtitle = "Colour denotes site") +
+   scale_x_continuous(breaks=c(2,4,6,8,10,12))
+```
+
+These results are cool and make a lot of sense! *I. scapularis* distribution is tightly linked to that of its forest-dwelling hosts. So in addition to broad, domain-scale distribution limits there are also very strong, local patterns of distribution and abundance.
+
+
+## PREVALENCE 
+
+Just like with tick abundance, it is useful to look at where *Borrelia* spp. occurs across NEON sites. This analysis was restricted to *Borrelia burgdorferi*, *B. mayonii*, *B. burgdorferi* sensu lato, *B. miyamotoi*, and *B. lonestari* found in *Ixodes* spp. nymphs. We do not differentiate between individual species because they are all the causal agents of Lyme Disease in humans and use similar mechanisms to infect hosts.
+
+```{r, warning = FALSE, message = FALSE, include = FALSE}
+# Read in data
+#TickPathIndiv <- read.csv("Tick_Pathogen_Individual.csv")
+#TickPathAgg <- read.csv("Tick_Borrelia_Prev_Aggregated.csv")
+
+# Filter to just IXOSCA
+#TickPathAgg <- TickPathAgg %>% 
+#    filter(Taxonomy == "IXOSCA")
+
+# Join to get lat and long for plots
+#TickPathAgg <- inner_join(TickPathAgg, TickPathIndiv)
+
+#saveRDS(TickPathAgg, "tickPrev_eda.Rdata")
+TickPathAgg <- readRDS("data/tickPrev_eda.Rdata")
+```
+
+## Spatial variability
+
+*Borrelia* spp. could theoretically inhabit any domain that has *Ixodes* ticks but is actually only present in a subset of domains. The upper Midwest and Northeast have the highest prevalence among domains where it occurs. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# mean prevalence by domain
+ggplot() +
+    geom_map(map=north_america, data=north_america,
+             aes(long, lat, map_id=region),
+             colour="black", fill="gray80", size=1) +
+    ylim(c(25, 50)) +
+    xlim(c(-125, -65)) +
+    geom_point(data = TickPathAgg %>% filter(!is.na(Borrelia.Prev)) %>%
+                   group_by(domainID) %>%
+                   summarise(meanPrev = mean(Borrelia.Prev), lat=first(decimalLatitude), lon=first(decimalLongitude)) %>% 
+                   ungroup(), 
+               aes(x = lon, y = lat, fill = meanPrev),
+               alpha = 0.8, size = 4, colour = "grey30",
+               shape = 21) +
+    scale_fill_viridis(option = "magma", direction = -1, begin = 0.2)+
+    theme_tick()+
+    theme(plot.title = element_text(hjust =0.5), axis.ticks = element_blank(), axis.text = element_blank())+
+    xlab("")+
+    ylab("")+
+    ggtitle("Mean Borrelia spp. prevalence by domain")
+```
+
+
+Just like with tick abundance, *Borrelia* spp. prevalence is variable at the site level within domains and at the plot level within sites. Even among domains or sites that are heavily invested with ticks, *Borrelia* spp. can remain absent at smaller scales. This is likely dominated by local characteristics at the plot scale (vegetation, microhabitats, microclimates) and density of small mammals and deer.
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# mean prevalence by site
+ggplot() +
+    geom_map(map=north_america, data=north_america,
+             aes(map_id=region),
+             colour="black", fill="gray80", size=1) +
+    ylim(c(25, 50)) +
+    xlim(c(-95, -65)) +
+    geom_point(data = TickPathAgg %>% filter(!is.na(Borrelia.Prev)) %>%
+                   group_by(siteID) %>%
+                   summarise(meanPrev = mean(Borrelia.Prev), lat=first(decimalLatitude), lon=first(decimalLongitude)) %>% 
+                   ungroup(), 
+               aes(x = lon, y = lat, fill = meanPrev),
+               alpha = 0.8, size = 4, colour = "grey30",
+               shape = 21) +
+    scale_fill_viridis(option = "magma", direction = -1, begin = 0.2)+
+    theme_tick()+
+    theme(plot.title = element_text(hjust =0.5), axis.ticks = element_blank(), axis.text = element_blank())+
+    xlab("")+
+    ylab("")+
+    ggtitle("Mean Borrelia spp. prevalence by site")
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# mean prevalence by plot
+ggplot() +
+    geom_map(map=north_america, data=north_america,
+             aes(map_id=region),
+             colour="black", fill="gray80", size=1) +
+    ylim(c(25, 50)) +
+    xlim(c(-95, -65)) +
+    geom_point(data = TickPathAgg %>% filter(!is.na(Borrelia.Prev)) %>%
+                   group_by(plotID) %>%
+                   summarise(meanPrev = mean(Borrelia.Prev), lat=first(decimalLatitude), lon=first(decimalLongitude)) %>% 
+                   ungroup(), 
+               aes(x = jitter(lon, amount = 0.5), y = jitter(lat, amount = 0.5), fill = meanPrev),
+               alpha = 0.8, size = 4, colour = "grey30",
+               shape = 21) +
+    scale_fill_viridis(option = "magma", direction = -1, begin = 0.2)+
+    theme_tick()+
+    theme(plot.title = element_text(hjust =0.5), axis.ticks = element_blank(), axis.text = element_blank())+
+    xlab("")+
+    ylab("")+
+    ggtitle("Mean Borrelia spp. prevalence by plot")
+```
+
+Elevation could influence occurrence and prevalence of *Borrelia* spp. by influencing vegetation and climate. At the plot level, it doesn't look like elevation is really important. Within a given elevation, there could be high or low prevalence. 
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# Elevation
+ggplot() +
+    geom_point(data=TickPathAgg %>% group_by(plotID) %>%
+                  summarise(meanPrev = mean(Borrelia.Prev), elev=first(elevation)) %>%
+                  ungroup(), 
+              aes(x=elev, y=meanPrev, colour=plotID), size=2) +
+    theme_tick() +
+    theme(legend.position = "none") +
+    labs(x="Elevation (m.a.s.l.)", y="Prevalence") +
+    ggtitle("Borrelia spp. prevalence across elevation",
+            subtitle = "Color denotes plot") 
+```
+
+## Temporal variability
+
+Prevalence over time at the site scale is mostly stable, but it's difficult to be sure in this short of a time scale.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# By year and site
+ggplot() +
+    geom_line(data=TickPathAgg %>% group_by(siteID, Year) %>%
+                  summarise(meanYearPrev = mean(Borrelia.Prev), fyear=first(Year)) %>%
+                  ungroup(), 
+              aes(x=fyear, y=meanYearPrev, colour=siteID), size=1) +
+    theme_tick() +
+    theme(legend.position = "none") +
+    labs(x="Year", y="Prevalence") +
+    ggtitle("Borrelia spp. prevalence by year",
+            subtitle = "Color denotes site") 
+```
+
+The plot scale shows a little more variability.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# By year and plot
+ggplot() +
+    geom_line(data=TickPathAgg %>% group_by(plotID, Year) %>%
+                  summarise(meanYearPrev = mean(Borrelia.Prev), fyear=first(Year)) %>%
+                  ungroup(), 
+              aes(x=fyear, y=meanYearPrev, colour=plotID), size=1) +
+    theme_tick() +
+    theme(legend.position = "none") +
+    labs(x="Year", y="Prevalence") +
+    ggtitle("Borrelia spp. prevalence by year",
+            subtitle = "Color denotes plot")
+```
+
+Prevalence at the plot scale by month shows more variability, especially in the early and late tick season.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# By month and plot
+ggplot() +
+    geom_line(data=TickPathAgg %>% group_by(plotID, Month) %>%
+        summarise(meanMonthPrev = mean(Borrelia.Prev), fmonth=first(Month)) %>%
+        ungroup(), 
+        aes(x=fmonth, y=meanMonthPrev, colour=plotID), size=1) +
+    theme_tick() +
+    theme(legend.position = "none") +
+    labs(x="Month", y="Prevalence") +
+    ggtitle("Borrelia spp. prevalence by month",
+            subtitle = "Color denotes plot") 
+```
+
+Plots are categorized by their dominate vegetation class into an NCLD class. *Borrelia* spp. is clearly most commonly found in deciduous forest but still shows lots of variation within it. Some NLCD classes have zero prevalence, but this is unsurprising when we consider what vegetation and small and large mammals might be there and how exactly transmission would occur.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# By month and NLCD class-- altered MYC to run
+ggplot(TickPathAgg %>% group_by(nlcdClass, Month, plotID) %>%
+                  summarise(meanMonthPrev = mean(Borrelia.Prev), fmonth=first(Month),
+                            nlcd=first(nlcdClass), plot=first(plotID)) %>%
+                  ungroup()) +
+    geom_line(aes(x=fmonth, y=meanMonthPrev, colour=plot), size=1) +
+    facet_wrap(~reorder(nlcd, desc(meanMonthPrev)), drop = FALSE) +
+    theme_tick() +
+    theme(legend.position = "none") +
+    labs(x="Month", y="Prevalence") +
+    ggtitle("Borrelia spp. prevalence across NLCD classes",
+            subtitle = "Color denotes plot") 
+```
+
+Contrary to tick abundance patterns, there is no peak in *Borrelia* spp. prevalence in mid-summer. Ticks have a two year life cycle, so it is likely that infected nymphs and adults are collected from the previous year in the early sampling season. Additionally, prevalence at the plot scale is extremely variable and likely dependent on vegetation structure, small mammal density, and large mammal minimum thresholds.
+
+
+
+# Tick Abundance Models
+
+## Modeling approach
+
+Our goal was to build a model that could be used to predict and understand tick abundances at NEON sites. We investigated several modeling approaches including state-space time series, variance partitioning, boosted regression trees, generalized linear mixed models, and generalized additive models. We ultimately proceeded with GAMs due to their ability to handle the non-linear, temporal element of our data and their flexibility in response variable. 
+
+One major challenge to modeling tick abundances (specifically, the densities of Ixodes nymphs) was the extreme zero-inflation in our data (as explored above). To handle this, we used zero-inflated poisson models. These models have two parts, one to predict the probability of 0s (the zero inflation model), and one to predict the counts (poisson model). 
+
+We explored several predictors for both the poisson and the zero inflation models. For the zero inflation model, the predictor variables we considered were: 
+
+   * `nlcdClass`
+   * `season` (a binary predictor; whether the sampling event was between May-September or not)
+   * `plotID` (a random effect)
+
+Therefore, these variables influenced whether there were ticks present or not (probability of tick count being a 0 or not).
+
+For the poisson model (counts), the predictor variables we considered were:
+
+   * `year-plotID` (the combination of year and plot, as a random effect)
+   * `plotID`  (a random effect)
+   * `dayofYear` (a smoothed term)
+   * `year` (a random effect)
+
+Finally, we accounted for sampling effort by including the area of the tick drag as an offset.
+
+
+## Read in the data
+
+We fit our models using a training dataset that had one tick season removed from it (May through July, 2018; later used as the validation dataset). This dataset is similar to the one used in data exploration, but has a few columns added and scaled. Note that the domains with no ticks present were removed, but this dataset does contain plots that never had ticks.
+
+```{r}
+abun <- readRDS("data/nymph_abun_train.Rdata")
+```
+
+## Fit the models
+
+Models are fit using the `mgcv` package. We used AIC for model selection. 
+
+Code for fitting models is below. Note that if you run the code below verbatim, it will read in the list of model objects instead of actually fitting all the models, since model fitting is time intensive.
+
+```{r, message = FALSE}
+# check if models have already been run
+models.exist <- file.exists("model_objects/zipmodels_tick_abun.Rdata")
+# if so, read them in and can skip the next part
+if(models.exist==TRUE){
+  readRDS("model_objects/zipmodels_tick_abun.Rdata") -> zipmodlist
+  list2env(zipmodlist, .GlobalEnv)
+  rm(zipmodlist)
+}
+
+# if the models haven't been pulled/run this will run them
+# careful as this may take a while
+if(models.exist == FALSE){
+  abun <- readRDS("data/nymph_abun_train.Rdata")
+  head(abun)
+  # fit zero-inflated Poissons
+  # first part of the model: poisson process (abundance)
+  # second part of the model: zero inflation process (prob of 0)
+  # a null model
+  zip0 <- gam(list(estimatedCount ~ offset(logSampledArea),
+                   ~1),
+              data = abun, family = ziplss())
+  
+  # random effects only
+  zip1 <- gam(list(estimatedCount ~ s(plotID, bs = "re") + offset(logSampledArea) ,
+                   ~s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  
+  # add in season as a predictor of presence
+  zip2 <- gam(list(estimatedCount ~ s(plotID, bs = "re") + offset(logSampledArea) ,
+                   ~ season + s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  
+  # add in nlcd as a predictor of presence
+  zip3 <- gam(list(estimatedCount ~s(plotID, bs = "re") + offset(logSampledArea) ,
+                   ~ season + nlcdClass + s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  
+  # add in day of year as a predictor of abundance
+  zip4 <- gam(list(estimatedCount ~ s(sDayofYear) + s(plotID, bs = "re") + offset(logSampledArea),
+                   ~season + nlcdClass + s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  
+  # add year as a random effect 
+  zip5 <- gam(list(estimatedCount ~ s(sDayofYear) + s(fYear, bs = "re") + s(plotID, bs = "re") + offset(logSampledArea) ,
+                   ~season + nlcdClass + s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  
+  # add year as a random effect NESTED witin plot 
+  zip6 <- gam(list(estimatedCount ~ s(sDayofYear) +offset(logSampledArea) + s(yearPlot, bs = "re"),
+                   ~season + nlcdClass + s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  # add a randomn smooth for day of year by plot
+  zip7 <- gam(list(estimatedCount ~ s(sDayofYear, plotID, bs = "re") +fYear + offset(logSampledArea) ,
+                   ~season + nlcdClass + s(plotID, bs = "re")),
+              data = abun, family = ziplss())
+  zip8 <- gam(list(estimatedCount ~ s(sDayofYear, yearPlot, bs = "re") + offset(logSampledArea), 
+                   ~season + nlcdClass + s(plotID, bs = "re")), 
+              data = abun, family = ziplss())
+  pattern <- ls(pattern="zip") # get names of models
+  # pattern <- grep("zip", names(.GlobalEnv), value = TRUE)
+  models <- do.call("list", mget(pattern))
+  
+  # save models
+  saveRDS(models, "model_objects/zipmodels_tick_abun.Rdata" )
+}
+```
+
+Compare models with AIC:
+```{r}
+pattern <- ls(pattern="zip") # get names of models
+zipmodlist <- do.call("list", mget(pattern)) # make a list of all them
+do.call(rbind, lapply(zipmodlist, glance)) %>% data.frame() %>%
+  mutate(model = pattern) %>% select(model, everything(.)) %>% arrange(AIC)
+```
+
+Explore output from "best" model:
+
+```{r}
+summary(zip6)
+```
+
+## Optional: re-fit best model with brms
+In order to better extract uncertainty estimates, we can fit the best model in `brms` which will give posterior distributions of parameters. 
+
+Note that if you want to run this model you will have to manually change the code below; otherwise, it reads in an existing model object. 
+```{r, warning = FALSE, message = FALSE}
+run.mod <- "no" # change this if you want to run the model 
+# warning that running it takes a long time (e.g. hours)!
+if(run.mod == "yes"){
+  require(brms)
+  b_zip6 <- brm(bf(
+    estimatedCount ~  s(sDayofYear)+ (1|yearPlot) + offset(logSampledArea), # observation-level RE
+    zi ~ nlcdClass + season + (1|plotID)),
+    data = abun, family = zero_inflated_poisson(), iter =1000, chains = 4)
+  b_zip7 <- update(b_zip6, iter = 2000) # run chains longer
+  saveRDS(b_zip7, "model_objects/b_zip7.Rdata")
+}
+
+# if you don't want to run it can just load it
+b_zip7 <- readRDS("model_objects/b_zip7.Rdata")
+summary(b_zip7)
+plot(b_zip7, ask = FALSE, newpage = FALSE)
+```
+
+This model didn't converge; the chains look pretty bad. In the future, we could use stronger priors and explore correlation among parameters which might be leading to the issue. For now, we will just proceed with maximum likelihood models fit with `mgcv`. 
+
+## Evaluate model fit using validation dataset
+
+The test/validation dataset is similar to the training, except contains a few months of data that were left out (May - July 2018). 
+
+```{r}
+nymphtest <- readRDS("data/nymph_abun_test.Rdata")
+```
+
+We will predict tick abundances using our model and compare to the actual abundances.
+
+From our two-part model, we can predict a few different responses. (1) probability of presence, from the zero-inflated (logit) part of the model (2) tick count if they are present from the poisson part of the model and (3) mean expected count, which multiplies the two together (type = "response").
+
+```{r, warning = FALSE, message = FALSE}
+nymph_pred <- nymphtest 
+
+# get predicted mean count (3)
+nymph_pred <- cbind(nymph_pred, data.frame(predict(zip6, newdata = nymph_pred, type = "response", se.fit = TRUE)) %>%
+                       select(pred_mean_count = fit, pred_mean_count_se = se.fit))
+# i'm skeptical of the standard error here...
+
+
+# also get predicted probability
+nymph_pred <- cbind(nymph_pred, data.frame(predict(zip6, newdata = nymph_pred, se.fit = TRUE)) %>%  # predict 
+   mutate(pred_prob = plogis(fit.2), pred_prob_low = plogis(fit.2-2*se.fit.2), pred_prob_hi = plogis(fit.2 + 2*se.fit.2), # back transform
+          pred_pois_count = exp(fit.1), pred_pois_count_low = exp(fit.1 - 2*se.fit.1), pred_pois_count_hi = exp(fit.1 + 2*se.fit.1)) %>%
+   select(pred_prob, pred_prob_low, pred_prob_hi, pred_pois_count, pred_pois_count_low, pred_pois_count_hi))
+```
+
+### How well does the model do at probability of presence?
+
+```{r, echo = FALSE}
+nymph_pred %>% ggplot() + geom_histogram(aes(pred_prob, fill = as.factor(nymph_presence))) + facet_wrap(~nymph_presence) + theme_classic() +
+  xlab("Model predicted probability of presence") +
+  labs(fill = "Observed Tick Presence")
+```
+
+Were there plots where model predicts very low prob of ticks but they were observed?
+```{r}
+(nymph_pred %>% filter(nymph_presence==1, pred_prob  < 0.05) %>% nrow())/(nymph_pred %>% filter(pred_prob  < 0.05) %>% nrow())
+
+(nymph_pred %>% filter(nymph_presence==1, pred_prob  < 0.1) %>% nrow())/(nymph_pred %>% filter(pred_prob  < 0.1) %>% nrow())
+
+(nymph_pred %>% filter(nymph_presence==1, pred_prob  < 0.25) %>% nrow())/(nymph_pred %>% filter(pred_prob  < 0.25) %>% nrow())
+```
+Of the samples where the model predicted < 0.05 chance of ticks, 3.6 percent had ticks (4 percent error).
+Of the samples where the model predicted < 0.10 chance of ticks, 4.1 percent had ticks.
+Of the samples where the model predicted < 0.25 chance of ticks, 11 percent had ticks.
+
+Were there plots where model predicts very high chance of ticks, but they were NOT observed?
+```{r}
+(nymph_pred %>% filter(nymph_presence==0, pred_prob  > 0.6) %>% nrow())/(nymph_pred %>% filter(pred_prob  > 0.6) %>% nrow())
+```
+
+Of the samples where model predicted > 0.6 chance of ticks, 17 percent did NOT have ticks.
+
+Overall, how well does predicted probablity of presence match observed presence?
+
+```{r}
+nymph_pred %>% ggplot(aes(x = pred_prob, y = nymph_presence)) + geom_jitter(width = .001, height = 0.05, alpha = .3, size = 3, col = "forestgreen") +
+  xlab("Model predicted probability of presence")+
+  ylab("Observed tick presence") +
+  theme_classic()
+```
+
+Using a confusion matrix to evaluate how well the model predicts presence/absence:
+
+```{r}
+confusionMatrix(data = as.factor(as.numeric(nymph_pred$pred_prob>0.5)),
+                      reference = as.factor(nymph_pred$nymph_presence))
+```
+
+Model seems fairly decent at predicting presence absence! 
+
+### How well does the model do at predicting abundance?
+
+Compare the predicted count from the model to the observed count:
+
+```{r}
+nymph_pred %>%
+  ggplot(aes(x=estimatedCount, y= pred_mean_count))+
+  geom_point(alpha = .5, size = 3, col = "magenta")+
+  geom_abline(slope = 1, intercept = 0, col ="magenta")+
+  theme_classic()+
+  ylab("Predicted count from model")+
+  xlab("Observed count")
+```
+
+Yikes. They seem to correlate, but the model is consistently predicting a higher count than observed (e.g. our model is biased).
+
+Let's figure out why. First, extract the records that have bad predictions:
+```{r}
+nymph_pred$resid <- nymph_pred$estimatedCount - nymph_pred$pred_mean_count
+mean(nymph_pred$resid) # negative, meaning we are OVER predicting
+hist(nymph_pred$resid)
+# the "really bad" resids are < -25
+nymph_pred %>% filter(resid < -25) -> bad_preds
+```
+
+For the plots in the "bad" dataset, plot the time series for 2018 only. Predictions are in blue, actuals are in red:
+
+```{r, echo = FALSE}
+abun %>% filter(yearPlot %in% bad_preds$yearPlot) %>%
+  ggplot(aes(x=sDayofYear, y = estimatedCount, color = "training")) +
+  geom_point()+
+  facet_wrap(~plotID) +
+  geom_point(data = bad_preds, aes(x=sDayofYear, y = estimatedCount, color = "observed"))+
+  geom_point(data = bad_preds, aes(x=sDayofYear, y = pred_mean_count, color = "predicted"))+
+theme(axis.text.x = element_text(size = 6), axis.text.y = element_text(size = 6),
+         strip.background = element_blank(), axis.title = element_text(size = 12),
+         strip.text = element_blank())+
+   xlab("Day of Year (scaled)")+
+   ylab("Nymph count")+
+   scale_color_manual(values = c("dodgerblue", "coral", "black"))
+```
+
+What about the predictions that aren't as bad? Anything different about those time series?
+
+```{r, echo = FALSE}
+nymph_pred %>% filter(resid>-15 & resid < 15) -> good_preds
+abun %>% filter(yearPlot %in% good_preds$yearPlot) %>%
+  ggplot(aes(x=sDayofYear, y = estimatedCount, color = "training")) +
+  geom_point()+
+  facet_wrap(~plotID) +
+  geom_point(data = good_preds, aes(x=sDayofYear, y = estimatedCount, color = "observed"))+
+  geom_point(data = good_preds, aes(x=sDayofYear, y = pred_mean_count, color = "predicted"))+
+   theme(axis.text.x = element_text(size = 6), axis.text.y = element_text(size = 6),
+         strip.background = element_blank(), axis.title = element_text(size = 12),
+         strip.text = element_blank())+
+   xlab("Day of Year (scaled)")+
+   ylab("Nymph count")+
+   scale_color_manual(values = c("dodgerblue", "coral", "black"))
+
+```
+
+A lot of these are zeros -- the plot pretty much always has zero ticks and so the prediction matches well.
+
+Why the bias towards high nymph counts? Is 2018 weird? Combine the training and testing datasets and visualize yearly patterns in nymphal density. 
+
+```{r}
+nymph_all <- rbind(abun, nymphtest)
+
+nymph_all %>% ggplot(aes(x=sDayofYear, y = log(density+.1), group = plotID)) +
+  geom_point(aes(color = plotID), show.legend=FALSE)+
+  facet_wrap(~year)+
+   theme_tick()+
+   xlab("Day of Year (scaled)") +
+   ylab("log (nymph density)")
+```
+
+Yes; 2018 seems like a weird year in terms of low densities, explaining why the model reliably over-predicts. 
+
+In future models, year-level covariates could be useful in making predictions; e.g. perhaps 2018 is a low mammal year or has a climate not favorable for nymph recruitment. 
+
+Plot predictions vs. actuals for plots that sometimes have ticks. Predictions are in blue, actuals are in red.
+```{r, echo = FALSE, warning = FALSE}
+# take a look at predictions for just those plots that *sometimes* have ticks
+
+abun %>% filter(totalTicks_plot>0) %>% pull(plotID) %>% unique() %>% as.character() ->  positive.plots
+
+abun %>% filter(plotID %in%  positive.plots[1:25], year == 2018, plotID %in% nymph_pred$plotID) %>%
+  ggplot(aes(x=sDayofYear, y = estimatedCount)) +
+  geom_point(aes(color = "training"))+
+  geom_point(data = filter(nymph_pred, plotID %in% positive.plots[1:25]), aes(x=sDayofYear, y = estimatedCount, color = "observed"))+
+  geom_point(data = filter(nymph_pred, plotID %in% positive.plots[1:25]), aes(x=sDayofYear, y = pred_mean_count, color = "predicted"))+
+   facet_wrap(~plotID, scales = "free") +
+   theme_tick()+
+   theme(axis.text.x = element_text(size = 6), axis.text.y = element_text(size = 6),
+         strip.background = element_blank(), axis.title = element_text(size = 12))+
+   xlab("Day of Year (scaled)")+
+   ylab("Nymph count")+
+   scale_color_manual(values = c("dodgerblue", "coral", "black"))
+
+# next 25
+abun %>% filter(plotID %in%  positive.plots[26:49], year == 2018, plotID %in% nymph_pred$plotID) %>%
+  ggplot(aes(x=sDayofYear, y = estimatedCount)) +
+  geom_point(aes(color = "training"))+
+  geom_point(data = filter(nymph_pred, plotID %in% positive.plots[26:49]), aes(x=sDayofYear, y = estimatedCount, color = "observed"))+
+  geom_point(data = filter(nymph_pred, plotID %in% positive.plots[26:49]), aes(x=sDayofYear, y = pred_mean_count, color = "predicted"))+
+   facet_wrap(~plotID, scales = "free") +
+   theme(axis.text.x = element_text(size = 6), axis.text.y = element_text(size = 6),
+         strip.background = element_blank(), axis.title = element_text(size = 12))+
+   xlab("Day of Year (scaled)")+
+   ylab("Nymph count")+
+   scale_color_manual(values = c("dodgerblue", "coral", "black"))
+   
+rm(bad_preds, good_preds)
+
+```
+
+## Closing thoughts
+
+Overall, the model does better at presence/absence than abundance. However, the way we did our testing and training dataset matters; our test dataset was subsetted by year. Therefore if abundance (rather than presence/absence) varies strongly across years, then our data won't be as good at predicting abundance.
+
+There is a lot of variation among plots. Right now, this is a random effect and if we had previous years of data, we were fairly good at predicting presence/absence at a plot in the next year. But what if we wanted to predict entirely new plots? Right now, the only informative covariates are day of year and nlcd. The uncertainty on the nlcd classes is large. Therefore, if we want to predict what will happen at NEW plots, we need a lot more plot-level and year-level information. This would be useful not only in predictions, but also in understanding mechanism; right now we know very little about why some plots have high tick densities. 
+
+Future models could incorporate small mammal density, litter, and other plot-year level information to make predictions. 
