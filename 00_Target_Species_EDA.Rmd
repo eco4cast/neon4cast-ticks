@@ -1,0 +1,174 @@
+---
+title: "Weekly EDA"
+author: "John Foster"
+date: "9/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(grid)
+library(gridExtra)
+
+# only most abundant taxa (amblyomma and ixodes)
+taxa.wanted <- c("AMBAME", "AMBMAC", "AMBSP", "AMBSPP", "IXOSCA", "IXOSP", "IXOSP2", "IXOSPP", "IXOSPP1")
+```
+
+### Functions for subsetting data
+
+The subsetting function below works as follows:
+
+1.  Create an epiWeek column (weeks start on Sunday), which follows the CDC version of an epidemiological week. See `?lubridate::epiweek` for more detail
+
+2. Create yearWeek column, which is just the year of observation and the epiWeek from above
+
+3. Discard 2020 data
+
+4. Divide that data into Training (before 2019) and Validation (2019) set
+
+5. Then filter to nymphs of the target species
+
+From this filtered data set, we need to find the plots where we can reasonably make forecasts. 
+The first thing I did was find plots in 2019 that have at least `n.pos.obs` positive counts. 
+This is `plots.2019`. 
+From there, I filtered the training data set to only include the plots in `plots.2019` _and_ plots that have observations starting in 2015 (so that 2016 is a full season).
+I then subset these plots further so that there are at least `n.pos.obs` positive observations in each year 2016, 2017, and 2018. 
+
+```{r functions}
+subset_targets <- function(dat.raw, spp, n.pos.obs){
+  
+  # dat.raw = "Exploratory_Data/data/tck_longform.Rdata"
+  # spp = species to subset 
+  # n.pos.obs = minimum number of positive observations in each year
+  
+  dat <- dat.raw %>% 
+    mutate(Year = year(collectDate)) %>%    # add year column
+    mutate(epiWeek = epiweek(collectDate)) %>%  # add week column, weeks start on Sunday
+    mutate(yearWeek = paste(Year, epiWeek, sep = "_")) %>% # yearWeek column
+    filter(Year < 2020) %>% # don't want 2020 data
+    mutate(trainValidate = ifelse(Year == 2019, "Validate", "Train")) %>% # 2019 is validation
+    filter(LifeStage == "Nymph") %>%  # only want nymphs
+    filter(acceptedTaxonID == spp)   # only most abundant taxa (amblyomma and ixodes)
+
+  # plots where 2019 forecasts could work
+  plots.2019 <- dat %>% 
+    filter(trainValidate == "Validate") %>%  # 2019 data
+    filter(IndividualCount != 0) %>%
+    group_by(plotID) %>% 
+    count() %>%            # n = the number of positive observations in a year
+    filter(n >= n.pos.obs) %>%          # want more than n.pos.obs non-zero counts in 2019
+    pull(plotID) %>% 
+    unique()
+  
+  # plots where there is long enough time series
+  # and for which 2019 data exists
+  plots.with.2016.obs <- dat %>% 
+    filter(trainValidate == "Train") %>% 
+    filter(plotID %in% plots.2019) %>% 
+    group_by(plotID) %>% 
+    summarise(firstObservation = min(collectDate)) %>% 
+    filter(firstObservation <= ymd("2015-12-31")) %>% 
+    pull(plotID)
+  
+  # find plots that have at least n.pos.obs positive
+  # observations each year
+  # need to save this object for later
+  positive.obs.by.year <- dat %>% 
+    filter(trainValidate == "Train") %>%
+    filter(plotID %in% plots.with.2016.obs) %>% # plots that have 2016 observations
+    filter(IndividualCount != 0) %>%
+    group_by(plotID, Year) %>% 
+    count() %>%            # n = the number of positive observations in a year
+    filter(n >= n.pos.obs)         # want more than n.pos.obs non-zero counts each year
+  
+  # pull out possible training plots
+  plots.train <- positive.obs.by.year %>% 
+     pull(plotID) %>% 
+     unique()       
+    
+  # only want the plots where there are more than n.pos.obs positive
+  # counts each year - done above - and these counts occur
+  # in (at least) 2016, 2017, and 2018 
+  years.wanted <- 2016:2018
+  plots.pos.2016.2018 <- rep(NA, length(plots.train)) # initialize 
+  for(i in seq_along(plots.train)){
+    # pull out years for each plot 
+    subset <- positive.obs.by.year %>% 
+      filter(plotID == plots.train[i]) %>% 
+      pull(Year)
+    
+    good <- subset %in% years.wanted # match the years we want
+    
+    # will have same number of TRUEs if years match
+    if(sum(good, na.rm = TRUE) == length(years.wanted)){
+      plots.pos.2016.2018[i] <- plots.train[i] # record plotID if match
+    }
+  }
+  # remove NAs
+  plots.pos.2016.2018 <- discard(plots.pos.2016.2018, is.na)
+  
+  # grab good plots
+  dat.all <- dat %>% 
+    filter(plotID %in% plots.pos.2016.2018)
+  
+  return(dat.all)
+}
+
+plot_timeseries <- function(data){
+    dat.plot <- data %>% 
+    group_by(plotID, yearWeek) %>%  
+    summarise(nymphCount = sum(IndividualCount))
+  
+    labels <- sort(unique(dat.plot$yearWeek))
+    labels <- labels[seq(1, length(labels), length.out = 6)]
+    
+    ggplot(dat.plot) +
+      geom_line(aes(x = (yearWeek), y = nymphCount, color = plotID, group = plotID)) +
+      scale_x_discrete(breaks = labels)  
+}
+
+```
+
+## Ixodes
+
+```{r message=FALSE, warning=FALSE}
+# load data from 01_download_clean_NEON_tick.R
+dat.raw <- readRDS("Exploratory_Data/data/tck_longform.Rdata")
+pos.seq <- 2:4 # number of positive observations each year
+spp <- "IXOSCA"
+dat <- list() # initialize
+
+# subset to possible n.pos.obs
+for(i in pos.seq){
+  dat[[i]] <- subset_targets(dat.raw, spp, i)
+  p <- plot_timeseries(dat[[i]]) + 
+    labs(title = paste("Minimum number of positive observations each year:", i))
+  print(p)
+} 
+
+
+```
+
+## Amblyomma
+
+```{r message=FALSE, warning=FALSE}
+# load data from 01_download_clean_NEON_tick.R
+dat.raw <- readRDS("Exploratory_Data/data/tck_longform.Rdata")
+pos.seq <- 2:4 # number of positive observations each year
+spp <- "AMBAME"
+dat <- list() # initialize
+
+# subset to possible n.pos.obs
+for(i in pos.seq){
+  dat[[i]] <- subset_targets(dat.raw, spp, i)
+  p <- plot_timeseries(dat[[i]]) + 
+    labs(title = paste("Minimum number of positive observations each year:", i))
+  print(p)
+} 
+
+
+
+```
