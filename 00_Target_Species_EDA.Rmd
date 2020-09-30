@@ -67,7 +67,7 @@ subset_targets <- function(dat.raw, spp, n.pos.obs){
   # and for which 2019 data exists
   plots.with.2016.obs <- dat %>% 
     filter(trainValidate == "Train") %>% 
-    filter(plotID %in% plots.2019) %>% 
+    # filter(plotID %in% plots.2019) %>% 
     group_by(plotID) %>% 
     summarise(firstObservation = min(collectDate)) %>% 
     filter(firstObservation <= ymd("2015-12-31")) %>% 
