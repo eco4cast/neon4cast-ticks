@@ -15,6 +15,7 @@ library(neonUtilities) # for downloading data (use GitHub version)
 library(lubridate) # for finding year from dates
 library(stringr) # for searching within character strings 
 library(here) # for working within subdirectories
+library(parallel) # for using more than one core in download
 ###########################################
 #  LOAD TICK DATA FROM NEON OR FILE SOURCE 
 ###########################################
@@ -30,8 +31,12 @@ if(file.exists(here("Exploratory_Data/data/Tick_all.Rdata"))){
   Tick_all <- readRDS(here("Exploratory_Data/data/Tick_all.Rdata"))
   list2env(Tick_all, globalenv())
 } else {
+  n.cores <- detectCores() - 2
   Tick_all <- loadByProduct(dpID = "DP1.10093.001",
-                            package = "expanded", check.size = F) 
+                            package = "expanded", 
+                            check.size = FALSE,
+                            token = Sys.getenv("NEON_TOKEN"),
+                            nCores = n.cores) 
   list2env(Tick_all, globalenv())
   saveRDS(Tick_all, here("Exploratory_Data/data/Tick_all.Rdata"))
 }
@@ -82,11 +87,27 @@ tck_fielddata %>% filter(is.na(samplingImpractical)|samplingImpractical == "OK")
 
 #### Remove records with no count data  
 # first confirm that lots of the records with no count data are recent years
-tck_fielddata_filtered %>% filter(is.na(adultCount), is.na(nymphCount)) %>% mutate(year = year(collectDate)) %>% 
-  pull(year) %>% table()
+tck_fielddata_filtered %>% filter(is.na(adultCount), is.na(nymphCount)) %>% 
+  mutate(year = year(collectDate)) %>% 
+  pull(year) %>% 
+  table()
 
 # filter only records with count data
-tck_fielddata_filtered %>% filter(!is.na(adultCount), !is.na(nymphCount), !is.na(larvaCount)) -> tck_fielddata_filtered
+# 2019 data collection changed, counts will always be NA 
+# so we want to keep those records
+tck_fielddata_2019 <- tck_fielddata_filtered %>% 
+  mutate(Year = year(collectDate)) %>% 
+  filter(Year >= 2019) %>% 
+  select(-Year)
+
+tck_fielddata_filtered %>% 
+  filter(!is.na(adultCount), 
+         !is.na(nymphCount),
+         !is.na(larvaCount)) -> tck_fielddata_filtered
+
+tck_fielddata_filtered <- bind_rows(tck_fielddata_filtered, tck_fielddata_2019)
+
+
 # note that requiring larval counts to be non na will drop some legacy data
 
 
@@ -95,11 +116,13 @@ tck_fielddata_filtered %>% filter(!is.na(adultCount), !is.na(nymphCount), !is.na
 # If so, only include field records corresponding to the dates with lab data
 
 # Get rid of field samples that have no taxonomic info 
-tck_fielddata_filtered %>% filter(sampleID %in% tck_taxonomyProcessed$sampleID | is.na(sampleID)) -> tck_fielddata_filtered 
+tck_fielddata_filtered %>% 
+  filter(sampleID %in% tck_taxonomyProcessed$sampleID | is.na(sampleID)) -> tck_fielddata_filtered 
 
 # Get rid of the tax samples that have no field data
 # many of these are legacy samples where larvae weren't counted 
-tck_taxonomyProcessed %>% filter(sampleID %in% tck_fielddata_filtered$sampleID) -> tck_tax_filtered
+tck_taxonomyProcessed %>% 
+  filter(sampleID %in% tck_fielddata_filtered$sampleID) -> tck_tax_filtered
 
 
 # double check same sample ID in both datasets
@@ -139,7 +162,9 @@ tck_fielddata_filtered %>% filter(targetTaxaPresent == "Y") %>%
   filter(is.na(adultCount) & is.na(nymphCount) & is.na(larvaCount)) %>% nrow()
 
 # are there any 0 counts where there should be > 0?
-tck_fielddata_filtered %>% filter(targetTaxaPresent == "Y") %>% mutate(totalCount = adultCount + nymphCount + larvaCount) %>% filter(totalCount == 0) # no
+tck_fielddata_filtered %>% filter(targetTaxaPresent == "Y") %>% 
+  mutate(totalCount = adultCount + nymphCount + larvaCount) %>% 
+  filter(totalCount == 0) # no
 
 
 ### Check for other missing count data
@@ -295,7 +320,8 @@ tck_fielddata_filtered %>% left_join(tck_tax_wide, by = "sampleID") -> tck_merge
 
 ### clean up 0s
 # if ticks were not found in the field, counts should be 0
-tck_merged %>% select(contains(c("_Nymph", "_Adult" , "_Larva"))) %>% colnames() -> taxon.cols # columns containing counts per taxon
+tck_merged %>% select(contains(c("_Nymph", "_Adult" , "_Larva"))) %>% 
+  colnames() -> taxon.cols # columns containing counts per taxon
 
 for(i in 1:length(taxon.cols)){
   tck_merged[which(tck_merged$targetTaxaPresent =="N"), which(colnames(tck_merged) == taxon.cols[i])] = 0
@@ -307,9 +333,14 @@ tck_merged %>% select_if(is_numeric)%>% summarise_all(~sum(is.na(.)))
 
 # NAs indicate the lab determined no ticks in sample or the associated record was pulled
 
-# if there are NAs for counts and an ID flag, most likely the lab did not find ticks and field data should be corrected
-tck_merged %>% select(uid_field, taxon.cols, IDflag) %>% filter_at(vars(taxon.cols), all_vars(is.na(.))) %>% filter(!is.na(IDflag)) %>% pull(uid_field) -> uid_change
-
+# if there are NAs for counts and an ID flag, 
+# most likely the lab did not find ticks and field data should be corrected
+tck_merged %>% 
+  select(uid_field, taxon.cols, IDflag) %>% 
+  filter_at(vars(taxon.cols), all_vars(is.na(.))) %>% 
+  filter(!is.na(IDflag)) %>% 
+  pull(uid_field) -> uid_change
+ 
 # correct the field data to reflect no ticks
 tck_merged[which(tck_merged$uid_field==uid_change), "targetTaxaPresent"] = "N"
 tck_merged[which(tck_merged$uid_field==uid_change), "adultCount"] = 0
@@ -334,6 +365,22 @@ tck_merged %>% mutate(
   totalCount_tax = rowSums(.[c(adult_cols, nymph_cols, larva_cols)]),
   totalCount_field = rowSums(.[c("adultCount", "nymphCount", "larvaCount")])
 ) -> tck_merged
+
+# check if there are any NAs in totalCount_field
+tck_merged %>% 
+  select(totalCount_field) %>% 
+  filter(is.na(.)) %>% 
+  nrow() # yes
+
+# check if these NAs are all 2019 or later
+tck_merged %>%
+  filter(collectDate >= ymd("2019-01-01")) %>% 
+  select(totalCount_field) %>% 
+  filter(is.na(.)) %>% 
+  nrow() # yes, same as above
+
+# change these NAs to 0, and we will deal with this flag below
+tck_merged$totalCount_field[is.na(tck_merged$totalCount_field)] <- 0
 
 # get a list of columns with counts for easily viewing dataset (optional)
 tck_merged %>% select(contains(c("adult", "nymph","larva", "total", "Adult",  "Nymph",  "Larva", "Count"), ignore.case = FALSE)) %>% select(-totalSampledArea) %>% colnames() -> countCols
@@ -361,7 +408,8 @@ tck_merged$CountFlag[tck_merged$totalCount_field < tck_merged$totalCount_tax] <-
 ### reconcile count discrepancies
 table(tck_merged$CountFlag)
 # the vast majority of counts match. 
-
+# we expect to see error 3, because starting in 2019
+# no field counts are reported, just Y/N
 
 #### FIX COUNT 2.1 RECONCILE DISCREPANCIES WHERE TOTALS MATCH #####
 
@@ -370,7 +418,7 @@ tck_merged %>% filter(CountFlag == 1) %>% select(countCols)
 # many of these are adults misidentified as nymphs or vice versa
 # trust the lab counts here (ignore nymphCount, adultCount, larvaCount from field data)
 # don't correct any counts and change the flag from a 1 to 0 
-tck_merged %>%  mutate(CountFlag = ifelse(CountFlag ==1, 0, CountFlag)) -> tck_merged
+tck_merged %>%  mutate(CountFlag = ifelse(CountFlag == 1, 0, CountFlag)) -> tck_merged
 table(tck_merged$CountFlag)
 
 
@@ -481,6 +529,11 @@ tck_merged %>% mutate(CountFlag = case_when(
 table(tck_merged$CountFlag) 
 
 #### FIX COUNT 2.3 RECONCILE DISCREPANCIES WHERE FIELD COUNT < TAX COUNT
+
+# remove flag for 2019 records or later
+tck_merged %>% mutate(CountFlag = case_when(
+  CountFlag == 3 & collectDate >= ymd("2019-01-01") ~ 0
+)) -> tck_merged
 
 ### cases where counts are off by minor numbers 
 # this could be miscounts in the field
