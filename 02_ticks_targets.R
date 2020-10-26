@@ -671,6 +671,13 @@ for(i in seq_along(targetPlot.vec)) {
     select(all_of(c("siteID", "nlcdClass", "decimalLatitude", "decimalLongitude", "elevation"))) %>% 
     slice(1)
   
+  # weeks that have observations, for removing duplicates below
+  existing.yearWeeks <- tick.target.data %>% 
+    filter(targetPlotID == plot.subset) %>%
+    pull(yearWeek) %>% 
+    unique() %>% 
+    as.numeric()
+  
   # go through each year in the subsetted plot
   for (y in year.vec) {
     
@@ -685,7 +692,9 @@ for(i in seq_along(targetPlot.vec)) {
       pull(endWeek)
     
     # week sequence +/- 1, don't want to duplicate weeks
-    week.seq <- seq(begin + 1, end - 1)
+    # also need to remove weeks that have observations
+    week.seq <- seq(begin + 1, end - 1) 
+    week.seq <- week.seq[which(!week.seq %in% existing.yearWeeks)] 
     
     # add filler rows, columns not specified get NA
     tick.target.data <- tick.target.data %>% 
