@@ -24,18 +24,18 @@
 
 # library(usethis)
 
-library(tidyverse)
+renv::restore()
+
+library(tidyverse) # for data wrangling and piping (dplyr probably ok)
 library(lubridate) # for finding year from dates
 library(stringr) # for searching within character strings 
 library(here) # for working within subdirectories
 library(parallel) # for using more than one core in download
 
 if(!"neonstore" %in% installed.packages()){
-  library(devtools)
-  devtools::install_github("cboettig/neonstore",)
+  library(remotes)
+  remotes::install_github("cboettig/neonstore")
 }
-
-library(neonstore) # for neon data
 
 ###########################################
 #  LOAD TICK DATA FROM NEON OR FILE SOURCE 
@@ -811,7 +811,7 @@ write.csv(target.data.final,
 
 source("../neon4cast-shared-utilities/publish.R")
 publish(code = c("02_ticks_targets.R"),
-        data_out = c("ticks-target.csv.gz"),
+        data_out = c("ticks-targets.csv.gz"),
         prefix = "ticks/",
         bucket = "targets")
 
