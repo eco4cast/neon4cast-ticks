@@ -24,7 +24,7 @@
 
 # library(usethis)
 
-library(tidyverse) # for data wrangling and piping (dplyr probably ok)
+library(tidyverse)
 library(lubridate) # for finding year from dates
 library(stringr) # for searching within character strings 
 library(here) # for working within subdirectories
