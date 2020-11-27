@@ -35,8 +35,6 @@ if(!"neonstore" %in% installed.packages()){
   remotes::install_github("cboettig/neonstore")
 }
 
-library(neonstore) # for neon data
-
 ###########################################
 #  LOAD TICK DATA FROM NEON OR FILE SOURCE 
 ###########################################
