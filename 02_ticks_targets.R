@@ -24,8 +24,6 @@
 
 # library(usethis)
 
-renv::restore()
-
 library(tidyverse) # for data wrangling and piping (dplyr probably ok)
 library(lubridate) # for finding year from dates
 library(stringr) # for searching within character strings 
