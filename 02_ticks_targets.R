@@ -883,10 +883,10 @@ target.data.final <- target.data.final %>%
 write.csv(target.data.final,
           file = here("ticks-targets.csv.gz"))
 
-# source("../neon4cast-shared-utilities/publish.R")
-# publish(code = c("02_ticks_targets.R"),
-#         data_out = c("ticks-targets.csv.gz"),
-#         prefix = "ticks/",
-#         bucket = "targets")
+source("../neon4cast-shared-utilities/publish.R")
+publish(code = c("02_ticks_targets.R"),
+        data_out = c("ticks-targets.csv.gz"),
+        prefix = "ticks/",
+        bucket = "targets")
 
 
