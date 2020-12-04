@@ -261,14 +261,22 @@ for(i in 2:length(targetName)){
   fx.df <- bind_rows(fx.df, fx.df.i)
 }
 
+# Save file as CSV in the
+# [theme_name]-[yearWeek]-[team_name].csv
+fx.file.name <- paste0("ticks-", 
+                       as.character(forecast.issue.time), 
+                       "-", 
+                       ForecastProject.id, 
+                       ".csv.gz")
+
 write.csv(fx.df,
-          file = file.path(dir.ncfname, "random-walk-forecast-jags.csv"))
+          file = file.path(dir.ncfname, fx.file.name))
 
 ## Publish the forecast automatically. (EFI-only)
 # source("../neon4cast-shared-utilities/publish.R")
 # publish(code = "03_nullFitAndForecast.R",
 #         data_in = "ticks-targets.csv.gz",
-#         data_out = "random-walk-forecast-jags.csv.gz",
+#         data_out = fx.file.name,
 #         # meta = "meta/eml.xml", # haven't done this yet
 #         prefix = "ticks/",
 #         bucket = "targets")
@@ -285,13 +293,19 @@ fx.df.summary <- fx.df %>%
                names_to = "Statistic",
                values_to = "individuals")
 
+# [theme_name]-[yearWeek]-[team_name]-summary.csv
+fx.file.name <- paste0("ticks-", 
+                       as.character(forecast.issue.time), 
+                       "-", ForecastProject.id, 
+                       "-summary.csv.gz")
+
 write.csv(fx.df,
           file = file.path(dir.ncfname, "random-walk-forecast-summary-jags.csv"))
 
 
 # publish(code = "03_nullFitAndForecast.R",
 #         data_in = "ticks-targets.csv.gz",
-#         data_out = "random-walk-forecast-summary-jags.csv.gz",
+#         data_out = fx.file.name,
 #         # meta = "meta/eml.xml", # haven't done this yet
 #         prefix = "ticks/",
 #         bucket = "targets")
