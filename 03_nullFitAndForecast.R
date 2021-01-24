@@ -62,7 +62,7 @@ random_walk <- " model {
   x[1] ~ dpois(x.ic)
   
   # data model
-  for(t in 2:n){
+  for(t in 1:n){
     y[t] ~ dpois(x[t])
   }
   
@@ -299,7 +299,7 @@ fx.file.name <- paste0("ticks-",
                        "-", ForecastProject.id, 
                        "-summary.csv.gz")
 
-write.csv(fx.df,
+write.csv(fx.df.summary,
           file = file.path(dir.ncfname, "random-walk-forecast-summary-jags.csv"))
 
 
