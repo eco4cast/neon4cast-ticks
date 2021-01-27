@@ -34,6 +34,7 @@ if(!"neonstore" %in% installed.packages()){
   library(remotes)
   remotes::install_github("cboettig/neonstore")
 }
+library(neonstore)
 
 library(neonstore)
 
@@ -50,7 +51,7 @@ library(neonstore)
 target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
 
 neon_download(product = "DP1.10093.001", # tick data product
-              end_date = "2018-12-31",   # end date for training data
+              end_date = "2019-12-31",   # end date for all data
               site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
               type = "basic")            # tick data sets do not have "expanded" data
   
@@ -100,7 +101,7 @@ repl_na <- function(x) ifelse(x=="", NA, x)
 tck_fielddata %>% mutate_if(.predicate = is.character, .funs = repl_na) -> tck_fielddata
 
 # check which fields have NAs
-tck_fielddata %>% select(everything()) %>% summarise_all(~sum(is.na(.))) 
+# tck_fielddata %>% select(everything()) %>% summarise_all(~sum(is.na(.))) 
 
 #### Quality Flags
 # remove samples that had logistical issues
@@ -109,16 +110,26 @@ tck_fielddata %>% filter(is.na(samplingImpractical)|samplingImpractical == "OK")
 
 #### Remove records with no count data  
 # first confirm that lots of the records with no count data are recent years
-tck_fielddata_filtered %>% filter(is.na(adultCount), is.na(nymphCount)) %>% 
-  mutate(year = year(collectDate)) %>% 
-  pull(year) %>% 
-  table()
+# tck_fielddata_filtered %>% filter(is.na(adultCount), is.na(nymphCount)) %>% 
+#   mutate(year = year(collectDate)) %>% 
+#   pull(year) %>% 
+#   table()
+
+# filter only records with count data
+# 2019 data collection changed, counts will always be NA 
+# so we want to keep those records
+tck_fielddata_2019 <- tck_fielddata_filtered %>% 
+  mutate(Year = year(collectDate)) %>% 
+  filter(Year >= 2019) %>% 
+  select(-Year)
 
 # filter only records with count data
 tck_fielddata_filtered %>% 
   filter(!is.na(adultCount), 
          !is.na(nymphCount),
          !is.na(larvaCount)) -> tck_fielddata_filtered
+
+tck_fielddata_filtered <- bind_rows(tck_fielddata_filtered, tck_fielddata_2019)
 
 # note that requiring larval counts to be non na will drop some legacy data
 
@@ -137,15 +148,15 @@ tck_taxonomyProcessed %>%
 
 
 # double check same sample ID in both datasets
-length(unique(na.omit(tck_fielddata_filtered$sampleID)))
-length(unique(tck_tax_filtered$sampleID)) # match
+# length(unique(na.omit(tck_fielddata_filtered$sampleID)))
+# length(unique(tck_tax_filtered$sampleID)) # match
 
 
 #### Check other quality control/sample remarks
 
-table(tck_fielddata_filtered$sampleCondition) # none of these are major issues
-
-table(tck_fielddata_filtered$dataQF) # legacy data only
+# table(tck_fielddata_filtered$sampleCondition) # none of these are major issues
+# 
+# table(tck_fielddata_filtered$dataQF) # legacy data only
 
 # tck_fielddata_filtered %>% 
 #   filter(dataQF == "legacyData") %>% 
@@ -155,17 +166,29 @@ table(tck_fielddata_filtered$dataQF) # legacy data only
 
 #### Sample IDs
 # check that all of the rows WITHOUT a sample ID have no ticks
-tck_fielddata_filtered %>% filter(is.na(sampleID)) %>% pull(targetTaxaPresent) %>% table() # true
+# tck_fielddata_filtered %>% filter(is.na(sampleID)) %>% pull(targetTaxaPresent) %>% table() # true
 
 # check that all the rows WITH a sample ID have ticks
-tck_fielddata_filtered %>% filter(!is.na(sampleID)) %>% pull(targetTaxaPresent) %>% table() # true
+# tck_fielddata_filtered %>% filter(!is.na(sampleID)) %>% pull(targetTaxaPresent) %>% table() # true
 
 # sampleID only assigned when there were ticks present; all missing sample IDs are for drags with no ticks (good)
 # for now, retain sampling events without ticks
 
 # make sure sample IDs are unique
-tck_fielddata_filtered %>% group_by(sampleID) %>% summarise(n = n()) %>% filter(n > 1) # yes all unique
-sum(duplicated(na.omit(tck_fielddata_filtered$sampleID)))
+duplicated.sample.id <- tck_fielddata_filtered %>% 
+  group_by(sampleID) %>% 
+  summarise(n = n()) %>% 
+  filter(n > 1) %>% 
+  pull(sampleID) # not unique
+
+# the issue for duplicated sample IDs are "TALL_002.20190318" and "TALL_008.20190318"
+# a quick check shows the each have two rows, and they are identical, so we'll remove the
+# second instance
+d.index <- which(tck_fielddata_filtered$sampleID == "TALL_002.20190318")
+tck_fielddata_filtered <- tck_fielddata_filtered[-d.index[2],]
+
+d.index <- which(tck_fielddata_filtered$sampleID == "TALL_008.20190318")
+tck_fielddata_filtered <- tck_fielddata_filtered[-d.index[2],]
 
 # check that drags with ticks present have a sample ID
 tck_fielddata_filtered %>% filter(targetTaxaPresent == "Y" & is.na(sampleID)) # none are missing S.ID
@@ -186,7 +209,6 @@ tck_fielddata_filtered %>% filter(targetTaxaPresent == "Y") %>%
 # list of fields that shouldn't have NAs
 req_cols <- c("siteID", "plotID", "collectDate", "adultCount", "nymphCount", "larvaCount")
 
-
 # all should have no NAs
 tck_fielddata_filtered %>% select(all_of(req_cols)) %>% summarise_all(~sum(is.na(.))) 
 
@@ -203,7 +225,7 @@ tck_tax_filtered %>% mutate_if(.predicate = is.character, .funs = repl_na) -> tc
 tck_tax_filtered %>% filter(sampleID %in% tck_fielddata_filtered$sampleID) -> tck_tax_filtered
 
 ### check sample quality flags
-table(tck_tax_filtered$sampleCondition) 
+# table(tck_tax_filtered$sampleCondition) 
 
 # none of these are deal breakers but just keep those deemed OK
 tck_tax_filtered %>% filter(sampleCondition == "OK") -> tck_tax_filtered
@@ -212,7 +234,7 @@ tck_tax_filtered %>% filter(sampleCondition == "OK") -> tck_tax_filtered
 tck_tax_filtered %>% select(everything()) %>% summarise_all(~sum(is.na(.))) 
 
 ### create a flag for potential lab ID/count issues 
-table(tck_taxonomyProcessed$remarks)
+# table(tck_taxonomyProcessed$remarks)
 
 tck_fielddata_filtered$IDflag <- NA
 
@@ -238,10 +260,10 @@ tck_tax_filtered %>% filter(!is.na(acceptedTaxonID))-> tck_tax_filtered
 
 
 # epithet are all NAs (don't need these columns)
-table(tck_tax_filtered$infraspecificEpithet)
+# table(tck_tax_filtered$infraspecificEpithet)
 
 # qualifier 
-table(tck_tax_filtered$identificationQualifier)
+# table(tck_tax_filtered$identificationQualifier)
 
 # legacy data is the only flag (OK)
 # table(tck_tax_filtered$dataQF)
@@ -249,33 +271,33 @@ table(tck_tax_filtered$identificationQualifier)
 # other remarks: some seem relevant for reconciling field and lab
 # however it will become onerous to go through these individually as dataset grows
 # ignore most of these for now
-unique(tck_tax_filtered$remarks)
+# unique(tck_tax_filtered$remarks)
 
 ### check that the IDs all make sense
-table(tck_tax_filtered$acceptedTaxonID) 
+# table(tck_tax_filtered$acceptedTaxonID) 
 # IXOSPP1 = genus ixodes (Ixodes spp.):
-tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSPP1") %>% select(scientificName, taxonRank) %>% head()
+# tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSPP1") %>% select(scientificName, taxonRank) %>% head()
 # IXOSPP = family ixodidae (Ixodidae spp.):
-tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSPP") %>% select(scientificName, taxonRank) %>% head()
+# tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSPP") %>% select(scientificName, taxonRank) %>% head()
 # IXOSP2 = order ixodes (Ixodida sp.):
-tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSP2") %>% select(scientificName, taxonRank) %>% head()
+# tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSP2") %>% select(scientificName, taxonRank) %>% head()
 # IXOSP = family exodidae (Ixodidae sp.)
-tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSP") %>% select(scientificName, taxonRank) %>% head()
+# tck_tax_filtered %>% filter(acceptedTaxonID == "IXOSP") %>% select(scientificName, taxonRank) %>% head()
 
-table(tck_tax_filtered$taxonRank)
-table(tck_tax_filtered$family)
+# table(tck_tax_filtered$taxonRank)
+# table(tck_tax_filtered$family)
 
 # if only ID'd to order, all are IXOSP2:
-tck_tax_filtered %>% filter(taxonRank == "order") %>% pull(acceptedTaxonID) %>% table()
+# tck_tax_filtered %>% filter(taxonRank == "order") %>% pull(acceptedTaxonID) %>% table()
 # if only ID'd to family, either IXOSP or IXOSPP
 # not sure how to deal with mixed species (e.g. IXOSPP)
-tck_tax_filtered %>% filter(taxonRank == "family") %>% pull(acceptedTaxonID) %>% table()
-tck_tax_filtered %>% filter(taxonRank == "species") %>% pull(acceptedTaxonID) %>% table()
+# tck_tax_filtered %>% filter(taxonRank == "family") %>% pull(acceptedTaxonID) %>% table()
+# tck_tax_filtered %>% filter(taxonRank == "species") %>% pull(acceptedTaxonID) %>% table()
 
 ### sex or age columns
-table(tck_tax_filtered$sexOrAge)
-tck_tax_filtered %>% filter(is.na(sexOrAge)) # all have sex or age
-tck_tax_filtered %>% filter(individualCount==0 | is.na(individualCount)) %>% nrow() # all have counts
+# table(tck_tax_filtered$sexOrAge)
+# tck_tax_filtered %>% filter(is.na(sexOrAge)) # all have sex or age
+# tck_tax_filtered %>% filter(individualCount==0 | is.na(individualCount)) %>% nrow() # all have counts
 
 # create a lifestage column so tax counts can be compared to field data
 tck_tax_filtered %>% mutate(lifeStage = case_when(sexOrAge == "Male" | sexOrAge == "Female" | sexOrAge == "Adult" ~ "Adult",
@@ -324,9 +346,9 @@ tck_tax_filtered %>% group_by(sampleID, acceptedTaxonID, lifeStage) %>%
 tck_tax_wide %>% replace(is.na(.), 0) -> tck_tax_wide
 # each row is now a unique sample id (e.g. a site x species matrix)
 
-sum(duplicated(tck_tax_wide$sampleID)) # none are duplicated
-sum(duplicated(na.omit(tck_fielddata_filtered$sampleID)))
-length(unique(tck_tax_wide$sampleID))
+# sum(duplicated(tck_tax_wide$sampleID)) # none are duplicated
+# sum(duplicated(na.omit(tck_fielddata_filtered$sampleID)))
+# length(unique(tck_tax_wide$sampleID))
 
 tck_fielddata_filtered %>% left_join(tck_tax_wide, by = "sampleID") -> tck_merged
 
@@ -345,7 +367,7 @@ for(i in 1:length(taxon.cols)){
 
 ### check for NA
 # check for NAs in the count columns
-tck_merged %>% select_if(is_numeric)%>% summarise_all(~sum(is.na(.))) 
+# tck_merged %>% select_if(is_numeric)%>% summarise_all(~sum(is.na(.))) 
 
 # NAs indicate the lab determined no ticks in sample or the associated record was pulled
 
@@ -383,10 +405,17 @@ tck_merged %>% mutate(
 ) -> tck_merged
 
 # check if there are any NAs in totalCount_field
-tck_merged %>% 
-  select(totalCount_field) %>% 
-  filter(is.na(.)) %>% 
-  nrow() # yes
+# tck_merged %>% 
+#   select(totalCount_field) %>% 
+#   filter(is.na(.)) %>% 
+#   nrow() # yes
+
+# check if these NAs are all 2019 or later
+# tck_merged %>%
+#   filter(collectDate >= ymd("2019-01-01")) %>% 
+#   select(totalCount_field) %>% 
+#   filter(is.na(.)) %>% 
+#   nrow() # yes, same as above
 
 # change these NAs to 0, and we will deal with this flag below
 tck_merged$totalCount_field[is.na(tck_merged$totalCount_field)] <- 0
@@ -415,8 +444,10 @@ tck_merged$CountFlag[tck_merged$totalCount_field > tck_merged$totalCount_tax] <-
 tck_merged$CountFlag[tck_merged$totalCount_field < tck_merged$totalCount_tax] <- 3 
 
 ### reconcile count discrepancies
-table(tck_merged$CountFlag)
+# table(tck_merged$CountFlag)
 # the vast majority of counts match. 
+# we expect to see error 3, because starting in 2019
+# no field counts are reported, just Y/N
 
 #### FIX COUNT 2.1 RECONCILE DISCREPANCIES WHERE TOTALS MATCH #####
 
@@ -426,7 +457,7 @@ tck_merged %>% filter(CountFlag == 1) %>% select(countCols)
 # trust the lab counts here (ignore nymphCount, adultCount, larvaCount from field data)
 # don't correct any counts and change the flag from a 1 to 0 
 tck_merged %>%  mutate(CountFlag = ifelse(CountFlag == 1, 0, CountFlag)) -> tck_merged
-table(tck_merged$CountFlag)
+# table(tck_merged$CountFlag)
 
 
 #### FIX COUNT 2.2 RECONCILE DISCREPANCIES WHERE FIELD COUNT > TAX COUNT ####
@@ -533,9 +564,14 @@ tck_merged %>% mutate(CountFlag = case_when(
   CountFlag == 2 & larvaCount>totalLarva_tax &IDflag == "INVOICE LIMIT" ~ 0, 
   TRUE ~ CountFlag)) -> tck_merged
 
-table(tck_merged$CountFlag) 
+# table(tck_merged$CountFlag) 
 
 #### FIX COUNT 2.3 RECONCILE DISCREPANCIES WHERE FIELD COUNT < TAX COUNT
+
+# remove flag for 2019 records or later
+tck_merged %>% mutate(CountFlag = case_when(
+  CountFlag == 3 & collectDate >= ymd("2019-01-01") ~ 0
+)) -> tck_merged
 
 ### cases where counts are off by minor numbers 
 # this could be miscounts in the field
@@ -637,9 +673,6 @@ tick.target.data <- bind_rows(ambame.target.data, ix.target.data)
 # in tick.target.data - only has weeks that are sampled, we want to add
 # all weeks from the first sampling event to the last sampling event of each year
 
-# pull out plotIDs for easier subsetting
-targetPlot.vec <- pull(tick.target.data, targetPlotID) %>% unique()
-
 # find the start and end week for each plot each year
 start.week <- tick.target.data %>% 
   group_by(targetPlotID, Year) %>% 
@@ -648,75 +681,90 @@ end.week <- tick.target.data %>%
   group_by(targetPlotID, Year) %>% 
   summarise(endWeek = max(yearWeek))
   
-# go through each plot
-for(i in seq_along(targetPlot.vec)) {
-  plot.subset <- targetPlot.vec[i]
-
-  # first week of sampling each year
-  first.weeks <- start.week %>%
-    filter(targetPlotID == plot.subset)
+for(spp in 1:2){ 
+  # go through each plot for each species
   
-  # last week of sampling each year
-  last.weeks <- end.week %>%
-    filter(targetPlotID == plot.subset)
+  if(spp == 1){
+    targetPlot.vec <- amb.plots
+    spp.fill <- "Ambloyomma_americanum"
+  } else {
+    targetPlot.vec <- ix.plots
+    spp.fill <- "Ixodes_scapularis"
+  }
   
-  # all years sampling occurred in the plot
-  year.vec <- pull(last.weeks, Year)
-  
-  # plot has the same characteristics across rows
-  # pulling out a row for the subsetted plot
-  # using these to fill in data set below
-  row.fill <- tick.target.data %>% 
-    filter(targetPlotID == plot.subset) %>% 
-    select(all_of(c("siteID", "nlcdClass", "decimalLatitude", "decimalLongitude", "elevation"))) %>% 
-    slice(1)
-  
-  # weeks that have observations, for removing duplicates below
-  existing.yearWeeks <- tick.target.data %>% 
-    filter(targetPlotID == plot.subset) %>%
-    pull(yearWeek) %>% 
-    unique() %>% 
-    as.numeric()
-  
-  # go through each year in the subsetted plot
-  for (y in year.vec) {
+  for(i in seq_along(targetPlot.vec)) {
+    plot.subset <- targetPlot.vec[i]
     
-    # beginning week in year y
-    begin <- first.weeks %>%
-      filter(Year == y) %>%
-      pull(startWeek) 
+    # first week of sampling each year
+    first.weeks <- start.week %>%
+      filter(targetPlotID == plot.subset)
     
-    # end week in year y
-    end <- last.weeks %>%
-      filter(Year == y) %>%
-      pull(endWeek)
+    # last week of sampling each year
+    last.weeks <- end.week %>%
+      filter(targetPlotID == plot.subset)
     
-    # week sequence +/- 1, don't want to duplicate weeks
-    # also need to remove weeks that have observations
-    week.seq <- seq(begin + 1, end - 1) 
-    week.seq <- week.seq[which(!week.seq %in% existing.yearWeeks)] 
+    # all years sampling occurred in the plot
+    year.vec <- pull(last.weeks, Year)
     
-    # add filler rows, columns not specified get NA
-    tick.target.data <- tick.target.data %>% 
-      add_row(yearWeek = week.seq, 
-              targetPlotID = plot.subset,
-              Year = y,
-              epiWeek = str_extract(week.seq, "\\d{2}$"), # last two digits in week.seq = epiWeek number
-              siteID = pull(row.fill, siteID),
-              nlcdClass = pull(row.fill, nlcdClass),
-              decimalLatitude = pull(row.fill, decimalLatitude),
-              decimalLongitude = pull(row.fill, decimalLongitude),
-              elevation = pull(row.fill, elevation))
+    # plot has the same characteristics across rows
+    # pulling out a row for the subsetted plot
+    # using these to fill in data set below
+    row.fill <- tick.target.data %>% 
+      filter(targetPlotID == plot.subset) %>% 
+      select(all_of(c("siteID", "nlcdClass", "decimalLatitude", "decimalLongitude", "elevation"))) %>% 
+      slice(1)
     
+    # weeks that have observations, for removing duplicates below
+    existing.yearWeeks <- tick.target.data %>% 
+      filter(targetPlotID == plot.subset) %>%
+      filter(targetSpecies == spp.fill) %>% 
+      pull(yearWeek) %>% 
+      unique() %>% 
+      as.numeric()
+    
+    # go through each year in the subsetted plot
+    for (y in year.vec) {
+      
+      # beginning week in year y
+      begin <- first.weeks %>%
+        filter(Year == y) %>%
+        pull(startWeek) 
+      
+      # end week in year y
+      end <- last.weeks %>%
+        filter(Year == y) %>%
+        pull(endWeek)
+      
+      # week sequence +/- 1, don't want to duplicate weeks
+      # also need to remove weeks that have observations
+      week.seq <- seq(begin + 1, end - 1) 
+      week.seq <- week.seq[which(!week.seq %in% existing.yearWeeks)] 
+      
+      # add filler rows, columns not specified get NA
+      tick.target.data <- tick.target.data %>% 
+        add_row(yearWeek = week.seq, 
+                targetPlotID = plot.subset,
+                targetSpecies = spp.fill,
+                Year = y,
+                epiWeek = str_extract(week.seq, "\\d{2}$"), # last two digits in week.seq = epiWeek number
+                siteID = pull(row.fill, siteID),
+                nlcdClass = pull(row.fill, nlcdClass),
+                decimalLatitude = pull(row.fill, decimalLatitude),
+                decimalLongitude = pull(row.fill, decimalLongitude),
+                elevation = pull(row.fill, elevation))
+      
+    }
   }
 }
+
+
 
 ###########################################
 # ENVIORNMENTAL VARIABLES
 ###########################################
 
 neon_download(product = "DP4.00001.001", # Summary weather statistics
-              end_date = "2018-12-31",   # end date for training data
+              end_date = "2019-12-31",   # end date for training data
               site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
               type = "expanded")    
 
@@ -799,6 +847,32 @@ tick.target.data$yearWeek <- as.character(tick.target.data$yearWeek)
 target.data.final <- left_join(tick.target.data,
                                weekly.envionmental.data,
                                by = c("siteID", "Year", "epiWeek", "yearWeek"))
+
+# create specific target column
+target.data.final <- target.data.final %>% 
+  mutate(specificTarget = paste(targetSpecies, targetPlotID, sep = "_")) 
+
+
+# pull(target.data.final, specificTarget) %>% 
+#   table()
+
+# Forecasts are submitted at the end of each month March - October.
+# Therefore the start week for the forecast changes depending on when
+# the forecast is submitted. 
+start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
+day.run <- lubridate::today() # the day the script is called
+
+# anytime we run this script before the start of the challenge we want to exclude all of 2019
+if(day.run < ymd("2021-03-31")){ 
+  target.data.final <- target.data.final %>% 
+    filter(Year < 2019)
+} else { # otherwise use the appropriate starting week (months are 2 ahead)
+  week.filter <- start.epi.weeks[month(day.run) - 2]
+  week.filter <- paste0(2019, week.filter) %>% as.numeric()
+  
+  target.data.final <- target.data.final %>% 
+    filter(yearWeek < week.filter)
+}
 
 # arrange for csv
 target.data.final <- target.data.final %>% 

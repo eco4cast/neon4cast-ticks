@@ -27,11 +27,11 @@ library(lubridate)
 emld::eml_version("eml-2.2.0")
 
 # first load the target data set
-data <- read.csv("ticks-targets.csv")
+data <- read.csv("ticks-targets.csv.gz")
 
 # for the random walk all we need are the targets and yearWeek
 data <- data %>% 
-  select(all_of(c("yearWeek", "targetSpecies", "targetCount", "targetPlotID")))
+  select(all_of(c("yearWeek", "targetSpecies", "targetCount", "targetPlotID", "specificTarget")))
 
 # next, we need to extract the targets into their respective groups
 # so we need data frames for each species x plot combination, retain
@@ -39,54 +39,18 @@ data <- data %>%
 # plots that have both species present are separated into differnt
 # target data sets
 
-# plots for Ambloyomma americanum
-aa.plots <- data %>% 
-  filter(targetSpecies == "Ambloyomma_americanum") %>% 
-  pull(targetPlotID) %>% 
+specific.targets <- data %>% 
+  pull(specificTarget) %>% 
   unique()
 
-data.list.aa <- list() # store each data frame into a list
-data.names <- rep(NA, length(aa.plots)) # for naming each list element
-for(i in seq_along(aa.plots)){
-  
-  # filter to each plot
-  data.model <- data %>% 
-    filter(targetPlotID == aa.plots[i]) 
-  
-  # some plots have both species, need to remove those rows if they exist
-  remove <- which(data.model$targetSpecies == "Ixodes_scapularis")
-  if(length(remove) >= 1) data.model <- data.model[-remove,]
-  
-  # create name for each list element
-  data.names[i] <- paste("Ambloyomma_americanum", aa.plots[i], sep = "_")
-  data.list.aa[[i]] <- data.model # store
+data.list.master <- list()
+for(i in seq_along(specific.targets)){
+  data.list.master[[i]] <- data %>% 
+    filter(specificTarget == specific.targets[i])
 }
-data.list.aa <- set_names(data.list.aa, data.names) # rename
 
-# same procedure for Ixodes scapularis
-ix.plots <- data %>% 
-  filter(targetSpecies == "Ixodes_scapularis") %>% 
-  pull(targetPlotID) %>% 
-  unique()
-
-data.list.ix <- list()
-data.names <- rep(NA, length(ix.plots))
-for(i in seq_along(ix.plots)){
-  data.model <- data %>% 
-    filter(targetPlotID == ix.plots[i]) 
-  
-  # some plots have both species, need to remove those rows
-  remove <- which(data.model$targetSpecies == "Ambloyomma_americanum")
-  if(length(remove) >= 1) data.model <- data.model[-remove,]
-  
-  data.names[i] <- paste("Ixodes_scapularis", ix.plots[i], sep = "_")
-  data.list.ix[[i]] <- data.model
-}
-data.list.ix <- set_names(data.list.ix, data.names)
-
-# all data to model, combine lists
-data.list.master <- purrr::prepend(data.list.aa, data.list.ix)
-
+# names list elments
+data.list.master <- set_names(data.list.master, specific.targets)
 
 # jags model code
 random_walk <- " model {
@@ -98,7 +62,7 @@ random_walk <- " model {
   x[1] ~ dpois(x.ic)
   
   # data model
-  for(t in 2:n){
+  for(t in 1:n){
     y[t] ~ dpois(x[t])
   }
   
@@ -297,14 +261,22 @@ for(i in 2:length(targetName)){
   fx.df <- bind_rows(fx.df, fx.df.i)
 }
 
+# Save file as CSV in the
+# [theme_name]-[yearWeek]-[team_name].csv
+fx.file.name <- paste0("ticks-", 
+                       as.character(forecast.issue.time), 
+                       "-", 
+                       ForecastProject.id, 
+                       ".csv.gz")
+
 write.csv(fx.df,
-          file = file.path(dir.ncfname, "random-walk-forecast-jags.csv"))
+          file = file.path(dir.ncfname, fx.file.name))
 
 ## Publish the forecast automatically. (EFI-only)
 # source("../neon4cast-shared-utilities/publish.R")
 # publish(code = "03_nullFitAndForecast.R",
 #         data_in = "ticks-targets.csv.gz",
-#         data_out = "random-walk-forecast-jags.csv.gz",
+#         data_out = fx.file.name,
 #         # meta = "meta/eml.xml", # haven't done this yet
 #         prefix = "ticks/",
 #         bucket = "targets")
@@ -321,13 +293,19 @@ fx.df.summary <- fx.df %>%
                names_to = "Statistic",
                values_to = "individuals")
 
-write.csv(fx.df,
+# [theme_name]-[yearWeek]-[team_name]-summary.csv
+fx.file.name <- paste0("ticks-", 
+                       as.character(forecast.issue.time), 
+                       "-", ForecastProject.id, 
+                       "-summary.csv.gz")
+
+write.csv(fx.df.summary,
           file = file.path(dir.ncfname, "random-walk-forecast-summary-jags.csv"))
 
 
 # publish(code = "03_nullFitAndForecast.R",
 #         data_in = "ticks-targets.csv.gz",
-#         data_out = "random-walk-forecast-summary-jags.csv.gz",
+#         data_out = fx.file.name,
 #         # meta = "meta/eml.xml", # haven't done this yet
 #         prefix = "ticks/",
 #         bucket = "targets")
