@@ -227,38 +227,81 @@ create_netCDF(
 ### The second EFI Standard is ensemble CSV ###
 
 # need to create a flat file
+# need the following columns:
+  # time
+  # ensemble
+  # obs_flag
+  # plot
+  # Ixodes_scapularis
+  # Ambloyomma_americanum
+  # forecast
+  # data_assimilation
 
-fx.df <- fx.array[,,obs.dim,1] # pull out the first forecast to set everything up
-colnames(fx.df) <- paste0(2019, target.weeks)
-fx.df <- fx.df %>% 
-  as_tibble() %>% 
-  mutate(target = targetName[1],
-         ensemble = 1:nrow(.),
-         data_assimilation = 0,
-         forecast.issue.time_YYYYWW = as.character(forecast.issue.time),
-         ForecastProject.id = ForecastProject.id,
-         Forecast.id = Forecast.id) %>% 
-  pivot_longer(paste0(2019, target.weeks), 
-               names_to = "time",
-               values_to = "individuals")
+# get vector of species names, first extract Ixodes_scapularis
+species.name <- str_extract(targetName, "Ixodes_scapularis")
 
-# loop through rest of targets and bind rows
-for(i in 2:length(targetName)){
-  fx.df.i <- fx.array[,,obs.dim,i] # pull out the first forecast to set everything up
-  colnames(fx.df.i) <- paste0(2019, target.weeks)
-  fx.df.i <- fx.df.i %>% 
-    as_tibble() %>% 
-    mutate(target = targetName[i],
-           ensemble = 1:nrow(.),
-           data_assimilation = 0,
-           forecast.issue.time_YYYYWW = as.character(forecast.issue.time),
-           ForecastProject.id = ForecastProject.id,
-           Forecast.id = Forecast.id) %>% 
-    pivot_longer(paste0(2019, target.weeks), 
-                 names_to = "time",
-                 values_to = "individuals")
+# NAs are Ambloyomma_americanum
+species.name[is.na(species.name)] <- "Ambloyomma_americanum"
+
+# extract plotIDs
+plot.id <- str_extract(targetName, "[[:upper:]]{4}_\\d{3}")
+
+plot.id.unique <- plot.id %>% unique()
+fx.df <- tibble()
+for(p in seq_along(plot.id.unique)){
+  plot.subset <- plot.id.unique[p]
+  fx.index <- grep(plot.subset, targetName)
   
-  fx.df <- bind_rows(fx.df, fx.df.i)
+  # if only one species present at the plot
+  if(length(fx.index) == 1){
+    fx <- fx.array[,,obs.dim,fx.index]
+    colnames(fx) <- paste0(2019, target.weeks)
+    fx <- fx %>% 
+      as_tibble() %>% 
+      pivot_longer(paste0(2019, target.weeks), 
+                   names_to = "time",
+                   values_to = species.name[fx.index]) %>% 
+      mutate(plot = plot.subset,
+             ensemble = rep(1:n.ens, each = length(target.weeks)),
+             data_assimilation = 0,
+             forecast = 0,
+             obs_flag = obs.dim) 
+    
+  # if both species are present at the plot
+  } else if (length(fx.index == 2)){
+      
+    fx.1 <- fx.array[,,obs.dim,fx.index[1]] 
+    fx.2 <- fx.array[,,obs.dim,fx.index[2]] 
+    colnames(fx.1) <- colnames(fx.2) <- paste0(2019, target.weeks)
+    
+    fx.1 <- fx.1 %>% 
+      as_tibble() %>% 
+      pivot_longer(paste0(2019, target.weeks), 
+                   names_to = "time",
+                   values_to = species.name[fx.index[1]]) %>% 
+      mutate(plot = plot.subset,
+             ensemble = rep(1:n.ens, each = length(target.weeks)),
+             data_assimilation = 0,
+             forecast = 0,
+             obs_flag = obs.dim)
+    
+    fx.2 <- fx.2 %>% 
+      as_tibble() %>% 
+      pivot_longer(paste0(2019, target.weeks), 
+                   names_to = "time",
+                   values_to = species.name[fx.index[2]]) %>% 
+      mutate(plot = plot.subset,
+             ensemble = rep(1:n.ens, each = length(target.weeks)),
+             data_assimilation = 0,
+             forecast = 0,
+             obs_flag = obs.dim)
+    
+    fx <- left_join(fx.1,
+                    fx.2,
+                    by = c("time", "plot", "ensemble", "data_assimilation", "forecast", "obs_flag"))
+  
+  }
+  fx.df <- bind_rows(fx.df, fx)
 }
 
 # Save file as CSV in the
@@ -283,15 +326,18 @@ write.csv(fx.df,
 
 
 ### The third EFI Standard is summary CSV ###
-fx.df.summary <- fx.df %>% 
-  group_by(target, time, data_assimilation, 
-           forecast.issue.time_YYYYWW, ForecastProject.id, Forecast.id) %>% 
-  summarize(mean = mean(individuals),
-            Conf_interv_02.5 = quantile(individuals, 0.025),
-            Conf_interv_97.5 = quantile(individuals, 0.975)) %>% 
-  pivot_longer(cols = c("mean", "Conf_interv_02.5", "Conf_interv_97.5"),
-               names_to = "Statistic",
-               values_to = "individuals")
+dfs <- fx.df %>% 
+  pivot_longer(cols = all_of(c("Ixodes_scapularis", "Ambloyomma_americanum")), 
+               names_to = "species") %>% # make a species column
+  group_by(time, plot, obs_flag, species, data_assimilation, forecast) %>% 
+  summarize(mean = mean(value, na.rm = TRUE), # need the na.rm=TRUE for plots without both spp present
+            sd = sd(value, na.rm = TRUE),
+            Conf_interv_02.5 = quantile(value, 0.025, na.rm = TRUE),
+            Conf_interv_97.5 = quantile(value, 0.975, na.rm = TRUE)) %>%
+  pivot_longer(all_of(c("mean", "sd", "Conf_interv_02.5", "Conf_interv_97.5")),
+               names_to = "statistic") %>% # statistic column
+  pivot_wider(names_from = species,
+              values_from = value) # back to species wide
 
 # [theme_name]-[yearWeek]-[team_name]-summary.csv
 fx.file.name <- paste0("ticks-", 
@@ -299,7 +345,7 @@ fx.file.name <- paste0("ticks-",
                        "-", ForecastProject.id, 
                        "-summary.csv.gz")
 
-write.csv(fx.df.summary,
+write.csv(dfs,
           file = file.path(dir.ncfname, "random-walk-forecast-summary-jags.csv"))
 
 
@@ -310,3 +356,4 @@ write.csv(fx.df.summary,
 #         prefix = "ticks/",
 #         bucket = "targets")
 
+message("-- DONE --")
