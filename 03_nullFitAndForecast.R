@@ -24,6 +24,7 @@ library(EML)
 library(uuid)
 library(emld)
 library(lubridate)
+library(ISOweek)
 emld::eml_version("eml-2.2.0")
 
 # first load the target data set
@@ -246,6 +247,9 @@ species.name[is.na(species.name)] <- "Ambloyomma_americanum"
 # extract plotIDs
 plot.id <- str_extract(targetName, "[[:upper:]]{4}_\\d{3}")
 
+# convert week to date mapping to the first day of the week
+date.col <- ISOweek2date(paste0("2019-W", target.weeks, "-1")) %>% as.character()
+
 plot.id.unique <- plot.id %>% unique()
 fx.df <- tibble()
 for(p in seq_along(plot.id.unique)){
@@ -255,10 +259,10 @@ for(p in seq_along(plot.id.unique)){
   # if only one species present at the plot
   if(length(fx.index) == 1){
     fx <- fx.array[,,obs.dim,fx.index]
-    colnames(fx) <- paste0(2019, target.weeks)
+    colnames(fx) <- date.col
     fx <- fx %>% 
       as_tibble() %>% 
-      pivot_longer(paste0(2019, target.weeks), 
+      pivot_longer(all_of(date.col), 
                    names_to = "time",
                    values_to = species.name[fx.index]) %>% 
       mutate(plot = plot.subset,
@@ -272,11 +276,11 @@ for(p in seq_along(plot.id.unique)){
       
     fx.1 <- fx.array[,,obs.dim,fx.index[1]] 
     fx.2 <- fx.array[,,obs.dim,fx.index[2]] 
-    colnames(fx.1) <- colnames(fx.2) <- paste0(2019, target.weeks)
+    colnames(fx.1) <- colnames(fx.2) <- date.col
     
     fx.1 <- fx.1 %>% 
       as_tibble() %>% 
-      pivot_longer(paste0(2019, target.weeks), 
+      pivot_longer(all_of(date.col), 
                    names_to = "time",
                    values_to = species.name[fx.index[1]]) %>% 
       mutate(plot = plot.subset,
@@ -287,7 +291,7 @@ for(p in seq_along(plot.id.unique)){
     
     fx.2 <- fx.2 %>% 
       as_tibble() %>% 
-      pivot_longer(paste0(2019, target.weeks), 
+      pivot_longer(all_of(date.col), 
                    names_to = "time",
                    values_to = species.name[fx.index[2]]) %>% 
       mutate(plot = plot.subset,
@@ -307,13 +311,13 @@ for(p in seq_along(plot.id.unique)){
 # Save file as CSV in the
 # [theme_name]-[yearWeek]-[team_name].csv
 fx.file.name <- paste0("ticks-", 
-                       as.character(forecast.issue.time), 
+                       as.character(date.col[1]), 
                        "-", 
                        ForecastProject.id, 
                        ".csv.gz")
 
 write.csv(fx.df,
-          file = file.path(dir.ncfname, fx.file.name))
+          file = fx.file.name)
 
 ## Publish the forecast automatically. (EFI-only)
 # source("../neon4cast-shared-utilities/publish.R")
@@ -341,12 +345,12 @@ dfs <- fx.df %>%
 
 # [theme_name]-[yearWeek]-[team_name]-summary.csv
 fx.file.name <- paste0("ticks-", 
-                       as.character(forecast.issue.time), 
+                       as.character(date.col[1]), 
                        "-", ForecastProject.id, 
                        "-summary.csv.gz")
 
 write.csv(dfs,
-          file = file.path(dir.ncfname, "random-walk-forecast-summary-jags.csv"))
+          file = fx.file.name)
 
 
 # publish(code = "03_nullFitAndForecast.R",
