@@ -25,7 +25,7 @@ new_data1 <- neonstore::neon_download(product = product,
                                       type = "basic", 
                                       start_date = start.date, 
                                       end_date = end.date,
-                                      token = Sys.getenv("NEON_TOKEN"))
+                                      .token = Sys.getenv("NEON_TOKEN"))
 
 if(!is.null(new_data1) | run_full_workflow){
   
