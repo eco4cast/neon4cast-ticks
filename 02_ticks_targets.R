@@ -5,17 +5,17 @@
 ### Script to create tidy dataset of NEON tick abundances 
 ### To be used for the RCN Tick Forecasting Challenge 
 # Tick Data
-  # link data from lab and field
-  # filter out poor quality data
-  # rectify count issues
-  # only included training data 
-    # through end of 2018
-    # I. scaularis and A. amercanum nymphs
-    # target plots
+# link data from lab and field
+# filter out poor quality data
+# rectify count issues
+# only included training data 
+# through end of 2018
+# I. scaularis and A. amercanum nymphs
+# target plots
 # Environmental drivers
-  # subset to target variables
-  # define uncertainties
-  # merge with tick data
+# subset to target variables
+# define uncertainties
+# merge with tick data
 # export a .csv
 
 ### Load packages
@@ -36,7 +36,7 @@ if(!"neonstore" %in% installed.packages()){
 }
 library(neonstore)
 
-library(neonstore)
+efi_server <- TRUE
 
 ###########################################
 #  LOAD TICK DATA FROM NEON OR FILE SOURCE 
@@ -48,13 +48,13 @@ library(neonstore)
 # As of 7/6/20 loadByProduct had bugs if using the CRAN version of the package
 # Downloading the package NeonUtilities via Github solves the issue
 
-target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
+#target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
 
-neon_download(product = "DP1.10093.001", # tick data product
-              end_date = "2019-12-31",   # end date for all data
-              site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
-              type = "basic")            # tick data sets do not have "expanded" data
-  
+#neon_download(product = "DP1.10093.001", # tick data product
+#              end_date = "2019-12-31",   # end date for all data
+#              site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
+#              type = "basic")            # tick data sets do not have "expanded" data
+
 
 
 # tck_taxonomyProcessed-basic and tck_fielddata-basic are the two datasets we want 
@@ -680,7 +680,7 @@ start.week <- tick.target.data %>%
 end.week <- tick.target.data %>% 
   group_by(targetPlotID, Year) %>% 
   summarise(endWeek = max(yearWeek))
-  
+
 for(spp in 1:2){ 
   # go through each plot for each species
   
@@ -883,10 +883,12 @@ target.data.final <- target.data.final %>%
 write.csv(target.data.final,
           file = here("ticks-targets.csv.gz"))
 
-source("../neon4cast-shared-utilities/publish.R")
-publish(code = c("02_ticks_targets.R"),
-        data_out = c("ticks-targets.csv.gz"),
-        prefix = "ticks/",
-        bucket = "targets")
+if(efi_server){
+  source("../neon4cast-shared-utilities/publish.R")
+  publish(code = c("02_ticks_targets.R"),
+          data_out = c("ticks-targets.csv.gz"),
+          prefix = "ticks/",
+          bucket = "targets")
+}
 
 
