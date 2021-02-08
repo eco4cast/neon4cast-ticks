@@ -32,7 +32,7 @@ library(parallel) # for using more than one core in download
 
 if(!"neonstore" %in% installed.packages()){
   library(remotes)
-  remotes::install_github("cboettig/neonstore")
+  remotes::install_github("cboettig/neonstore", ref = "patch/api-updates")
 }
 library(neonstore)
 
@@ -48,7 +48,7 @@ efi_server <- TRUE
 # As of 7/6/20 loadByProduct had bugs if using the CRAN version of the package
 # Downloading the package NeonUtilities via Github solves the issue
 
-#target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
+target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
 
 #neon_download(product = "DP1.10093.001", # tick data product
 #              end_date = "2019-12-31",   # end date for all data
@@ -648,9 +648,9 @@ ambame.target.data <- tck_merged_final %>%
          yearWeek = as.numeric(paste0(Year, epiWeek)), # yearWeek column
          targetSpecies = "Ambloyomma_americanum",
          targetCount = IndividualCount,
-         targetPlotID = plotID) %>%   
+         plotID = plotID) %>%   
   select(all_of(c("Year", "epiWeek", "yearWeek", "targetSpecies", "targetCount", 
-                  "targetPlotID", "siteID", "nlcdClass", "decimalLatitude", 
+                  "plotID", "siteID", "nlcdClass", "decimalLatitude", 
                   "decimalLongitude", "elevation", "totalSampledArea")))
 ix.target.data <- tck_merged_final %>% 
   filter(LifeStage == "Nymph",
@@ -661,9 +661,9 @@ ix.target.data <- tck_merged_final %>%
          yearWeek = as.numeric(paste0(Year, epiWeek)), # yearWeek column
          targetSpecies = "Ixodes_scapularis",
          targetCount = IndividualCount,
-         targetPlotID = plotID) %>%   
+         plotID = plotID) %>%   
   select(all_of(c("Year", "epiWeek", "yearWeek", "targetSpecies", "targetCount", 
-                  "targetPlotID", "siteID", "nlcdClass", "decimalLatitude", 
+                  "plotID", "siteID", "nlcdClass", "decimalLatitude", 
                   "decimalLongitude", "elevation", "totalSampledArea")))
 
 # both species in one tibble
@@ -675,10 +675,10 @@ tick.target.data <- bind_rows(ambame.target.data, ix.target.data)
 
 # find the start and end week for each plot each year
 start.week <- tick.target.data %>% 
-  group_by(targetPlotID, Year) %>% 
+  group_by(plotID, Year) %>% 
   summarise(startWeek = min(yearWeek))
 end.week <- tick.target.data %>% 
-  group_by(targetPlotID, Year) %>% 
+  group_by(plotID, Year) %>% 
   summarise(endWeek = max(yearWeek))
 
 for(spp in 1:2){ 
@@ -697,11 +697,11 @@ for(spp in 1:2){
     
     # first week of sampling each year
     first.weeks <- start.week %>%
-      filter(targetPlotID == plot.subset)
+      filter(plotID == plot.subset)
     
     # last week of sampling each year
     last.weeks <- end.week %>%
-      filter(targetPlotID == plot.subset)
+      filter(plotID == plot.subset)
     
     # all years sampling occurred in the plot
     year.vec <- pull(last.weeks, Year)
@@ -710,13 +710,13 @@ for(spp in 1:2){
     # pulling out a row for the subsetted plot
     # using these to fill in data set below
     row.fill <- tick.target.data %>% 
-      filter(targetPlotID == plot.subset) %>% 
+      filter(plotID == plot.subset) %>% 
       select(all_of(c("siteID", "nlcdClass", "decimalLatitude", "decimalLongitude", "elevation"))) %>% 
       slice(1)
     
     # weeks that have observations, for removing duplicates below
     existing.yearWeeks <- tick.target.data %>% 
-      filter(targetPlotID == plot.subset) %>%
+      filter(plotID == plot.subset) %>%
       filter(targetSpecies == spp.fill) %>% 
       pull(yearWeek) %>% 
       unique() %>% 
@@ -743,7 +743,7 @@ for(spp in 1:2){
       # add filler rows, columns not specified get NA
       tick.target.data <- tick.target.data %>% 
         add_row(yearWeek = week.seq, 
-                targetPlotID = plot.subset,
+                plotID = plot.subset,
                 targetSpecies = spp.fill,
                 Year = y,
                 epiWeek = str_extract(week.seq, "\\d{2}$"), # last two digits in week.seq = epiWeek number
@@ -757,6 +757,13 @@ for(spp in 1:2){
   }
 }
 
+tick.target.data <- tick.target.data %>% 
+  group_by(Year, epiWeek, plotID) %>%
+  mutate(row = row_number()) %>%
+  pivot_wider(names_from = targetSpecies, values_from = targetCount) %>% 
+  select(-row) %>% 
+  mutate(time = ISOweek::ISOweek2date(paste0(Year,"-W", epiWeek, "-1")))
+
 
 
 ###########################################
@@ -766,7 +773,7 @@ for(spp in 1:2){
 neon_download(product = "DP4.00001.001", # Summary weather statistics
               end_date = "2019-12-31",   # end date for training data
               site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
-              type = "expanded")    
+              type = "basic")    
 
 # quality flags (QF): pass = 0, fail = 1
 daily.temp <- neon_read(table = "wss_daily_temp-basic")
@@ -849,8 +856,8 @@ target.data.final <- left_join(tick.target.data,
                                by = c("siteID", "Year", "epiWeek", "yearWeek"))
 
 # create specific target column
-target.data.final <- target.data.final %>% 
-  mutate(specificTarget = paste(targetSpecies, targetPlotID, sep = "_")) 
+#target.data.final <- target.data.final %>% 
+#  mutate(specificTarget = paste(targetSpecies, plotID, sep = "_")) 
 
 
 # pull(target.data.final, specificTarget) %>% 
@@ -876,7 +883,7 @@ if(day.run < ymd("2021-03-31")){
 
 # arrange for csv
 target.data.final <- target.data.final %>% 
-  group_by(targetPlotID) %>% 
+  group_by(plotID) %>% 
   arrange(yearWeek, .by_group = TRUE)
 
 # write targets to csv

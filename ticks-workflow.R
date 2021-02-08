@@ -5,12 +5,17 @@
 # install dependencies 
 devtools::install_deps()
 
+Sys.setenv("NEONSTORE_HOME" = "/efi_neon_challenge/neonstore")
+Sys.setenv("NEONSTORE_DB" = "/efi_neon_challenge/neonstore")
+
 library(neonstore)
 library(tidyverse)
 library(lubridate)
 
 run_full_workflow <- TRUE
 generate_null <- TRUE
+
+
 
 # tick data product, target sites, and dates
 product <- "DP1.10093.001" 

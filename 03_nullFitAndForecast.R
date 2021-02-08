@@ -213,18 +213,18 @@ dir.ncfname <- file.path("Random_Walk_Fits", as.character(forecast.issue.time))
 
 if(!dir.exists(dir.ncfname)) dir.create(dir.ncfname, recursive = TRUE)
 
-source("create_netCDF.R")
-create_netCDF(
-  fx = fx.array,
-  ncfname = file.path(dir.ncfname, "random-walk-forecast-jags.nc"),
-  data.assimilation = data.assimilation, 
-  obs.dim = obs.dim, 
-  forecast = forecast, 
-  targetName = targetName, 
-  forecast.issue.time = forecast.issue.time, 
-  Forecast.id = Forecast.id, 
-  ForecastProject.id = ForecastProject.id
-  )
+#source("create_netCDF.R")
+#create_netCDF(
+#  fx = fx.array,
+#  ncfname = file.path(dir.ncfname, "random-walk-forecast-jags.nc"),
+#  data.assimilation = data.assimilation, 
+#  obs.dim = obs.dim, 
+#  forecast = forecast, 
+#  targetName = targetName, 
+#  forecast.issue.time = forecast.issue.time, 
+#  Forecast.id = Forecast.id, 
+#  ForecastProject.id = ForecastProject.id
+#  )
 
 
 ### The second EFI Standard is ensemble CSV ###
@@ -240,6 +240,7 @@ species.name[is.na(species.name)] <- "Ambloyomma_americanum"
 # extract plotIDs
 plot.id <- str_extract(targetName, "[[:upper:]]{4}_\\d{3}")
 
+
 # convert week to date mapping to the first day of the week
 date.col <- ISOweek2date(paste0("2019-W", target.weeks, "-1")) %>% as.character()
 
@@ -247,6 +248,7 @@ plot.id.unique <- plot.id %>% unique()
 fx.df <- tibble()
 for(p in seq_along(plot.id.unique)){
   plot.subset <- plot.id.unique[p]
+  site.subset <- str_extract(plot.subset, "[[:upper:]]{4}")
   fx.index <- grep(plot.subset, targetName)
   
   # if only one species present at the plot
@@ -258,7 +260,8 @@ for(p in seq_along(plot.id.unique)){
       pivot_longer(all_of(date.col), 
                    names_to = "time",
                    values_to = species.name[fx.index]) %>% 
-      mutate(plot = plot.subset,
+      mutate(plotID = plot.subset,
+             siteID = site.subset,
              ensemble = rep(1:n.ens, each = length(target.weeks)),
              data_assimilation = 0,
              forecast = 0,
@@ -276,7 +279,8 @@ for(p in seq_along(plot.id.unique)){
       pivot_longer(all_of(date.col), 
                    names_to = "time",
                    values_to = species.name[fx.index[1]]) %>% 
-      mutate(plot = plot.subset,
+      mutate(plotID = plot.subset,
+             siteID = site.subset,
              ensemble = rep(1:n.ens, each = length(target.weeks)),
              data_assimilation = 0,
              forecast = 0,
@@ -287,7 +291,7 @@ for(p in seq_along(plot.id.unique)){
       pivot_longer(all_of(date.col), 
                    names_to = "time",
                    values_to = species.name[fx.index[2]]) %>% 
-      mutate(plot = plot.subset,
+      mutate(plotID = plot.subset,
              ensemble = rep(1:n.ens, each = length(target.weeks)),
              data_assimilation = 0,
              forecast = 0,
@@ -295,11 +299,13 @@ for(p in seq_along(plot.id.unique)){
     
     fx <- left_join(fx.1,
                     fx.2,
-                    by = c("time", "plot", "ensemble", "data_assimilation", "forecast", "obs_flag"))
+                    by = c("time", "plotID", "ensemble", "data_assimilation", "forecast", "obs_flag"))
     
   }
   fx.df <- bind_rows(fx.df, fx)
 }
+
+#fx.df$siteID <- str_split_fixed(fx.df$plotID, "_", 2)[, 1]
 
 # Save file as CSV in the
 # [theme_name]-[yearWeek]-[team_name].csv
@@ -324,27 +330,27 @@ if(efi_server){
 
 
 ### The third EFI Standard is summary CSV ###
-dfs <- fx.df %>% 
-  pivot_longer(cols = all_of(c("Ixodes_scapularis", "Ambloyomma_americanum")), 
-               names_to = "species") %>% # make a species column
-  group_by(time, plot, obs_flag, species, data_assimilation, forecast) %>% 
-  summarize(mean = mean(value, na.rm = TRUE), # need the na.rm=TRUE for plots without both spp present
-            sd = sd(value, na.rm = TRUE),
-            Conf_interv_02.5 = quantile(value, 0.025, na.rm = TRUE),
-            Conf_interv_97.5 = quantile(value, 0.975, na.rm = TRUE)) %>%
-  pivot_longer(all_of(c("mean", "sd", "Conf_interv_02.5", "Conf_interv_97.5")),
-               names_to = "statistic") %>% # statistic column
-  pivot_wider(names_from = species,
-              values_from = value) # back to species wide
+#dfs <- fx.df %>% 
+#  pivot_longer(cols = all_of(c("Ixodes_scapularis", "Ambloyomma_americanum")), 
+#               names_to = "species") %>% # make a species column
+#  group_by(time, plot, obs_flag, species, data_assimilation, forecast) %>% 
+#  summarize(mean = mean(value, na.rm = TRUE), # need the na.rm=TRUE for plots without both spp present
+#            sd = sd(value, na.rm = TRUE),
+#            Conf_interv_02.5 = quantile(value, 0.025, na.rm = TRUE),
+#            Conf_interv_97.5 = quantile(value, 0.975, na.rm = TRUE)) %>%
+#  pivot_longer(all_of(c("mean", "sd", "Conf_interv_02.5", "Conf_interv_97.5")),
+#               names_to = "statistic") %>% # statistic column
+#  pivot_wider(names_from = species,
+#              values_from = value) # back to species wide
 
 # [theme_name]-[yearWeek]-[team_name]-summary.csv
-fx.file.name <- paste0("ticks-", 
-                       as.character(date.col[1]), 
-                       "-", ForecastProject.id, 
-                       "-summary.csv.gz")
+#fx.file.name <- paste0("ticks-", 
+#                       as.character(date.col[1]), 
+#                       "-", ForecastProject.id, 
+#                       "-summary.csv.gz")
 
-write.csv(dfs,
-          file = file.path(dir.ncfname, fx.file.name))
+#write.csv(dfs,
+#          file = file.path(dir.ncfname, fx.file.name))
 
 #'Publish the forecast automatically.  Run only on EFI Challenge server
 # if(efi_server){
