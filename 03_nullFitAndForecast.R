@@ -32,9 +32,19 @@ efi_server <- TRUE
 # first load the target data set
 data <- read.csv("ticks-targets.csv.gz")
 
-# for the random walk all we need are the targets and yearWeek
-data <- data %>% 
-  select(all_of(c("yearWeek", "targetSpecies", "targetCount", "targetPlotID", "specificTarget")))
+# Forecasts are submitted at the end of each month March - October.
+# Therefore the start week for the forecast changes depending on when
+# the forecast is submitted. 
+start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
+day.run <- lubridate::today() # the day the script is called
+
+# anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
+if(day.run < "2021-03-31"){ 
+  start.week <- start.epi.weeks[1]
+} else { # otherwise use the appropriate starting week (months are 2 ahead)
+  start.week <- start.epi.weeks[month(day.run) - 2]
+}
+filter.week <- paste0("2019", start.week) %>% as.integer()
 
 # next, we need to extract the targets into their respective groups
 # so we need data frames for each species x plot combination, retain
@@ -42,19 +52,83 @@ data <- data %>%
 # plots that have both species present are separated into differnt
 # target data sets
 
-specific.targets <- data %>% 
-  pull(specificTarget) %>% 
-  unique()
+ixodes.plots <- c(
+  "BLAN_012",
+  "BLAN_005",
+  "SCBI_013",
+  "SCBI_002",
+  "SERC_001",
+  "SERC_005",
+  "SERC_006",
+  "SERC_012",
+  "ORNL_007"  
+)
 
-data.list.master <- list()
-for(i in seq_along(specific.targets)){
-  data.list.master[[i]] <- data %>% 
-    filter(specificTarget == specific.targets[i])
+ambloyomma.plots <- c(
+  "SCBI_013",
+  "SERC_001",
+  "SERC_005",
+  "SERC_006",
+  "SERC_002",
+  "SERC_012",
+  "KONZ_025",
+  "UKFS_001",
+  "UKFS_004",
+  "UKFS_003",
+  "ORNL_002",
+  "ORNL_040",
+  "ORNL_008",
+  "ORNL_007",
+  "ORNL_009",
+  "ORNL_003",
+  "TALL_001",
+  "TALL_008",
+  "TALL_002"
+)
+
+# for the random walk all we need are the targets and yearWeek
+data.list.ix <- list()
+for(i in seq_along(ixodes.plots)){
+  data.ix <- data %>% 
+    select(all_of(c("yearWeek", "plotID", "Ixodes_scapularis", "time"))) %>% 
+    filter(plotID == ixodes.plots[i]) %>% 
+    filter(yearWeek < filter.week)
+  
+  if(ixodes.plots[i] %in% ambloyomma.plots){
+    data.ix <- distinct(data.ix)
+    counts <- data.ix[which(!is.na(data.ix$Ixodes_scapularis)), "yearWeek"]
+    data.ix <- data.ix %>% 
+      filter(!(yearWeek %in% counts & is.na(Ixodes_scapularis)))
+  }
+  
+  data.list.ix[[i]] <- data.ix  
 }
+data.list.ix <- set_names(data.list.ix, paste0("Ixodes_scapularis_", ixodes.plots))
 
-# names list elments
-data.list.master <- set_names(data.list.master, specific.targets)
+data.list.aa <- list()
+for(i in seq_along(ambloyomma.plots)){
+  data.aa <- data %>% 
+    select(all_of(c("yearWeek", "plotID", "Ambloyomma_americanum", "time"))) %>% 
+    filter(plotID == ambloyomma.plots[i]) %>% 
+    filter(yearWeek < filter.week)
+  
+  if(ambloyomma.plots[i] %in% ixodes.plots){
+    data.aa <- distinct(data.aa)
+    counts <- data.aa[which(!is.na(data.aa$Ambloyomma_americanum)), "yearWeek"]
+    data.aa <- data.aa %>% 
+      filter(!(yearWeek %in% counts & is.na(Ambloyomma_americanum)))
+  }
+  
+  data.list.aa[[i]] <- data.aa
+}
+data.list.aa <- set_names(data.list.aa, paste0("Ambloyomma_americanum_", ambloyomma.plots))
 
+
+# combine
+data.list.master <- prepend(data.list.aa, data.list.ix)
+
+
+  
 # jags model code
 random_walk <- " model {
   
@@ -82,30 +156,20 @@ random_walk <- " model {
   # thin: the number of samples to save
 run_forecast <- function(model, df, target.weeks, thin){
   
-  # check we are only modelling one species at one plot
-  spp <- df %>% pull(targetSpecies) %>% unique() 
-  spp <- spp[!is.na(spp)]
-  if(length(spp) > 1) stop("Both species in data! \n", call. = FALSE)
-  
-  plot <- df %>% pull(targetPlotID) %>% unique()
-  if(length(plot) > 1) stop("More than one plot in data! \n", call. = FALSE)
-  
-  # at this point we have passed both checks
-  cat("Fitting", spp, "at", plot, "\n")
-  
   # n.weeks the number of weeks to forecast into the future
   # need to pad df to make the forecast in jags
   na.pad <- rep(NA, length(target.weeks))
   
   jags.data <- list() # jags takes data in a list
   jags.data$n <- nrow(df) + length(target.weeks)   # number of observations + number of forecasts
-  jags.data$y <- c(pull(df, targetCount), na.pad)  # counts, NAs at end are forecast weeks
+  jags.data$y <- c(df[,3], na.pad)  # counts, NAs at end are forecast weeks
   jags.data$x.ic <- rpois(1, 5)                    # randomly set the first latent state
   
   # initialize model 
   j.model <- jags.model(
     file = textConnection(model),
     data = jags.data,
+    inits = list(x = jags.data$y),
     n.chains = 3
   )
   
@@ -146,20 +210,6 @@ run_forecast <- function(model, df, target.weeks, thin){
 }
 
 ### set forecast variables ###
-
-# Forecasts are submitted at the end of each month March - October.
-# Therefore the start week for the forecast changes depending on when
-# the forecast is submitted. 
-start.epi.weeks <- c(10, 14, 19, 23, 28, 32, 36, 41) # all possible start weeks
-day.run <- lubridate::today() # the day the script is called
-
-# anytime we run this script before the start of the challenge we want to forecast all 2019 target weeks
-if(day.run < "2021-03-31"){ 
-  start.week <- start.epi.weeks[1]
-} else { # otherwise use the appropriate starting week (months are 2 ahead)
-  start.week <- start.epi.weeks[month(day.run) - 2]
-}
-
 end.week <- 44 # does not change
 target.weeks <- start.week:end.week
 n.weeks <- length(target.weeks)       # the number of weeks forecasted, same across all targets
@@ -188,6 +238,7 @@ fx.array <- array(data = NA,
 # now, run fit and forecast over target data sets individually
 for(i in seq_len(n.targets)){ 
   cat(i, "/", n.targets, "\n")
+  cat("Fitting", names(data.list.master)[i], "\n")
   
   df <- pluck(data.list.master, i) # grab data set
   
