@@ -871,14 +871,38 @@ day.run <- lubridate::today() # the day the script is called
 
 # anytime we run this script before the start of the challenge we want to exclude all of 2019
 if(day.run < ymd("2021-03-31")){ 
+  na.index <- which(target.data.final$Year == 2019)
+  
+  # set targets to NA
+  target.data.final$Ixodes_scapularis[na.index] <- NA
+  target.data.final$Ambloyomma_americanum[na.index] <- NA
+  
+  # set rh and temp columns to NA
   target.data.final <- target.data.final %>% 
-    filter(Year < 2019)
+    mutate(across(starts_with("RH"), ~na_if(Year, 2019))) %>% 
+    mutate(across(starts_with("airTemp"), ~na_if(Year, 2019))) 
+  
 } else { # otherwise use the appropriate starting week (months are 2 ahead)
   week.filter <- start.epi.weeks[month(day.run) - 2]
-  week.filter <- paste0(2019, week.filter) %>% as.numeric()
+  week.filter <- paste0(2019, week.filter) %>% as.integer()
   
   target.data.final <- target.data.final %>% 
-    filter(yearWeek < week.filter)
+    mutate(yearWeek = as.integer(yearWeek))
+  
+  na.index <- which(target.data.final$yearWeek >= week.filter)
+  
+  # set targets to NA
+  target.data.final$Ixodes_scapularis[na.index] <- NA
+  target.data.final$Ambloyomma_americanum[na.index] <- NA
+  target.data.final$RHMax_precent[na.index] <- NA
+  target.data.final$RHMax_variance[na.index] <- NA
+  target.data.final$RHMin_precent[na.index] <- NA
+  target.data.final$RHMin_variance[na.index] <- NA
+  target.data.final$airTempMin_degC[na.index] <- NA
+  target.data.final$airTempMin_variance[na.index] <- NA
+  target.data.final$airTempMax_degC[na.index] <- NA
+  target.data.final$airTempMax_variance[na.index] <- NA
+  
 }
 
 # arrange for csv
