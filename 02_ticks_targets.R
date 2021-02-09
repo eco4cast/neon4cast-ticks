@@ -878,9 +878,14 @@ if(day.run < ymd("2021-03-31")){
   target.data.final$Ambloyomma_americanum[na.index] <- NA
   
   # set rh and temp columns to NA
-  target.data.final <- target.data.final %>% 
-    mutate(across(starts_with("RH"), ~na_if(Year, 2019))) %>% 
-    mutate(across(starts_with("airTemp"), ~na_if(Year, 2019))) 
+  target.data.final$RHMax_precent[na.index] <- NA
+  target.data.final$RHMax_variance[na.index] <- NA
+  target.data.final$RHMin_precent[na.index] <- NA
+  target.data.final$RHMin_variance[na.index] <- NA
+  target.data.final$airTempMin_degC[na.index] <- NA
+  target.data.final$airTempMin_variance[na.index] <- NA
+  target.data.final$airTempMax_degC[na.index] <- NA
+  target.data.final$airTempMax_variance[na.index] <- NA
   
 } else { # otherwise use the appropriate starting week (months are 2 ahead)
   week.filter <- start.epi.weeks[month(day.run) - 2]
