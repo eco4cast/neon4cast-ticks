@@ -64,7 +64,7 @@ ixodes.plots <- c(
   "ORNL_007"  
 )
 
-ambloyomma.plots <- c(
+amblyomma.plots <- c(
   "SCBI_013",
   "SERC_001",
   "SERC_005",
@@ -90,38 +90,38 @@ ambloyomma.plots <- c(
 data.list.ix <- list()
 for(i in seq_along(ixodes.plots)){
   data.ix <- data %>% 
-    select(all_of(c("yearWeek", "plotID", "Ixodes_scapularis", "time"))) %>% 
+    select(all_of(c("yearWeek", "plotID", "ixodes_scapularis", "time"))) %>% 
     filter(plotID == ixodes.plots[i]) %>% 
     filter(yearWeek < filter.week)
   
-  if(ixodes.plots[i] %in% ambloyomma.plots){
+  if(ixodes.plots[i] %in% amblyomma.plots){
     data.ix <- distinct(data.ix)
-    counts <- data.ix[which(!is.na(data.ix$Ixodes_scapularis)), "yearWeek"]
+    counts <- data.ix[which(!is.na(data.ix$ixodes_scapularis)), "yearWeek"]
     data.ix <- data.ix %>% 
-      filter(!(yearWeek %in% counts & is.na(Ixodes_scapularis)))
+      filter(!(yearWeek %in% counts & is.na(ixodes_scapularis)))
   }
   
   data.list.ix[[i]] <- data.ix  
 }
-data.list.ix <- set_names(data.list.ix, paste0("Ixodes_scapularis_", ixodes.plots))
+data.list.ix <- set_names(data.list.ix, paste0("ixodes_scapularis_", ixodes.plots))
 
 data.list.aa <- list()
-for(i in seq_along(ambloyomma.plots)){
+for(i in seq_along(amblyomma.plots)){
   data.aa <- data %>% 
-    select(all_of(c("yearWeek", "plotID", "Ambloyomma_americanum", "time"))) %>% 
-    filter(plotID == ambloyomma.plots[i]) %>% 
+    select(all_of(c("yearWeek", "plotID", "amblyomma_americanum", "time"))) %>% 
+    filter(plotID == amblyomma.plots[i]) %>% 
     filter(yearWeek < filter.week)
   
-  if(ambloyomma.plots[i] %in% ixodes.plots){
+  if(amblyomma.plots[i] %in% ixodes.plots){
     data.aa <- distinct(data.aa)
-    counts <- data.aa[which(!is.na(data.aa$Ambloyomma_americanum)), "yearWeek"]
+    counts <- data.aa[which(!is.na(data.aa$amblyomma_americanum)), "yearWeek"]
     data.aa <- data.aa %>% 
-      filter(!(yearWeek %in% counts & is.na(Ambloyomma_americanum)))
+      filter(!(yearWeek %in% counts & is.na(amblyomma_americanum)))
   }
   
   data.list.aa[[i]] <- data.aa
 }
-data.list.aa <- set_names(data.list.aa, paste0("Ambloyomma_americanum_", ambloyomma.plots))
+data.list.aa <- set_names(data.list.aa, paste0("amblyomma_americanum_", amblyomma.plots))
 
 
 # combine
@@ -236,7 +236,8 @@ fx.array <- array(data = NA,
                           n.targets)) # the number of targets (species_site)
 
 # now, run fit and forecast over target data sets individually
-for(i in seq_len(n.targets)){ 
+for(i in seq_len(n.targets)){
+  # for(i in 1:2){ 
   cat(i, "/", n.targets, "\n")
   cat("Fitting", names(data.list.master)[i], "\n")
   
@@ -283,10 +284,10 @@ if(!dir.exists(dir.ncfname)) dir.create(dir.ncfname, recursive = TRUE)
 # need to create a flat file
 
 # get vector of species names, first extract Ixodes_scapularis
-species.name <- str_extract(targetName, "Ixodes_scapularis")
+species.name <- str_extract(targetName, "ixodes_scapularis")
 
-# NAs are Ambloyomma_americanum
-species.name[is.na(species.name)] <- "Ambloyomma_americanum"
+# NAs are Amblyomma_americanum
+species.name[is.na(species.name)] <- "amblyomma_americanum"
 
 # extract plotIDs
 plot.id <- str_extract(targetName, "[[:upper:]]{4}_\\d{3}")
@@ -376,13 +377,14 @@ if(efi_server){
           data_in = "ticks-targets.csv.gz",
           data_out = file.path(dir.ncfname, fx.file.name),
           prefix = "ticks/",
-          bucket = "forecasts")
+          bucket = "forecasts",
+          registries = "https://hash-archive.carlboettiger.info")
 }
 
 
 ### The third EFI Standard is summary CSV ###
 #dfs <- fx.df %>% 
-#  pivot_longer(cols = all_of(c("Ixodes_scapularis", "Ambloyomma_americanum")), 
+#  pivot_longer(cols = all_of(c("Ixodes_scapularis", "Amblyomma_americanum")), 
 #               names_to = "species") %>% # make a species column
 #  group_by(time, plot, obs_flag, species, data_assimilation, forecast) %>% 
 #  summarize(mean = mean(value, na.rm = TRUE), # need the na.rm=TRUE for plots without both spp present

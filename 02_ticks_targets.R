@@ -30,11 +30,18 @@ library(stringr) # for searching within character strings
 library(here) # for working within subdirectories
 library(parallel) # for using more than one core in download
 
+
+
 if(!"neonstore" %in% installed.packages()){
   library(remotes)
   remotes::install_github("cboettig/neonstore", ref = "patch/api-updates")
 }
+
+Sys.setenv("NEONSTORE_HOME" = "/efi_neon_challenge/neonstore")
+Sys.setenv("NEONSTORE_DB" = "/efi_neon_challenge/neonstore")
 library(neonstore)
+
+
 
 efi_server <- TRUE
 
@@ -59,8 +66,8 @@ target.sites <- c("BLAN", "ORNL", "SCBI", "SERC", "KONZ", "TALL", "UKFS")
 
 # tck_taxonomyProcessed-basic and tck_fielddata-basic are the two datasets we want 
 # first we need to import the data into a local database
-neon_store(table = "tck_taxonomyProcessed-basic")
-neon_store(table = "tck_fielddata-basic")
+#neon_store(table = "tck_taxonomyProcessed-basic")
+#neon_store(table = "tck_fielddata-basic")
 
 # then grab the tables from the local db to work with locally
 tck_taxonomyProcessed <- neon_table("tck_taxonomyProcessed-basic")
@@ -646,7 +653,7 @@ ambame.target.data <- tck_merged_final %>%
   mutate(Year = year(collectDate),    # add year column
          epiWeek = sprintf("%02d", epiweek(collectDate)), # add week column, leading 0 for single digits
          yearWeek = as.numeric(paste0(Year, epiWeek)), # yearWeek column
-         targetSpecies = "Ambloyomma_americanum",
+         targetSpecies = "Amblyomma_americanum",
          targetCount = IndividualCount,
          plotID = plotID) %>%   
   select(all_of(c("Year", "epiWeek", "yearWeek", "targetSpecies", "targetCount", 
@@ -686,7 +693,7 @@ for(spp in 1:2){
   
   if(spp == 1){
     targetPlot.vec <- amb.plots
-    spp.fill <- "Ambloyomma_americanum"
+    spp.fill <- "Amblyomma_americanum"
   } else {
     targetPlot.vec <- ix.plots
     spp.fill <- "Ixodes_scapularis"
@@ -770,10 +777,10 @@ tick.target.data <- tick.target.data %>%
 # ENVIORNMENTAL VARIABLES
 ###########################################
 
-neon_download(product = "DP4.00001.001", # Summary weather statistics
-              end_date = "2019-12-31",   # end date for training data
-              site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
-              type = "basic")    
+#neon_download(product = "DP4.00001.001", # Summary weather statistics
+#              end_date = "2019-12-31",   # end date for training data
+#              site = target.sites,       # target sites defined from 00_Target_Species_EDA.Rmd
+#              type = "basic")    
 
 # quality flags (QF): pass = 0, fail = 1
 daily.temp <- neon_read(table = "wss_daily_temp-basic")
@@ -875,7 +882,7 @@ if(day.run < ymd("2021-03-31")){
   
   # set targets to NA
   target.data.final$Ixodes_scapularis[na.index] <- NA
-  target.data.final$Ambloyomma_americanum[na.index] <- NA
+  target.data.final$Amblyomma_americanum[na.index] <- NA
   
   # set rh and temp columns to NA
   target.data.final$RHMax_precent[na.index] <- NA
@@ -898,7 +905,7 @@ if(day.run < ymd("2021-03-31")){
   
   # set targets to NA
   target.data.final$Ixodes_scapularis[na.index] <- NA
-  target.data.final$Ambloyomma_americanum[na.index] <- NA
+  target.data.final$Amblyomma_americanum[na.index] <- NA
   target.data.final$RHMax_precent[na.index] <- NA
   target.data.final$RHMax_variance[na.index] <- NA
   target.data.final$RHMin_precent[na.index] <- NA
@@ -913,18 +920,21 @@ if(day.run < ymd("2021-03-31")){
 # arrange for csv
 target.data.final <- target.data.final %>% 
   group_by(plotID) %>% 
-  arrange(yearWeek, .by_group = TRUE)
+  arrange(yearWeek, .by_group = TRUE) %>% 
+  rename(amblyomma_americanum = Amblyomma_americanum,
+         ixodes_scapularis = Ixodes_scapularis)
 
 # write targets to csv
-write.csv(target.data.final,
-          file = here("ticks-targets.csv.gz"))
+write_csv(target.data.final,
+          file = "ticks-targets.csv.gz")
 
 if(efi_server){
   source("../neon4cast-shared-utilities/publish.R")
   publish(code = c("02_ticks_targets.R"),
           data_out = c("ticks-targets.csv.gz"),
           prefix = "ticks/",
-          bucket = "targets")
+          bucket = "targets",
+          registries = "https://hash-archive.carlboettiger.info")
 }
 
 
