@@ -944,7 +944,7 @@ target.data.final <- target.data.final %>%
 
 # write targets to csv
 write_csv(target.data.final,
-          file = "ticks-targets.csv.gz")
+          path = "ticks-targets.csv.gz")
 
 if(efi_server){
   source("../neon4cast-shared-utilities/publish.R")

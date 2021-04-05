@@ -24,7 +24,7 @@ library(EML)
 library(uuid)
 library(emld)
 library(lubridate)
-library(ISOweek)
+library(MMWRweek)
 emld::eml_version("eml-2.2.0")
 
 efi_server <- TRUE
@@ -294,7 +294,7 @@ plot.id <- str_extract(targetName, "[[:upper:]]{4}_\\d{3}")
 
 
 # convert week to date mapping to the first day of the week
-date.col <- ISOweek2date(paste0("2019-W", target.weeks, "-1")) %>% as.character()
+date.col <- MMWRweek::MMWRweek2Date(rep(2019, length(target.weeks)), target.weeks) %>% as.character()
 
 plot.id.unique <- plot.id %>% unique()
 fx.df <- tibble()
