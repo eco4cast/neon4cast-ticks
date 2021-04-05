@@ -766,12 +766,33 @@ for(spp in 1:2){
 
 tick.target.data <- tick.target.data %>% 
   group_by(Year, epiWeek, plotID) %>%
-  mutate(row = row_number()) %>%
+  mutate(row = row_number(),
+         epiWeek = as.integer(epiWeek)) %>%
   pivot_wider(names_from = targetSpecies, values_from = targetCount) %>% 
   select(-row) %>% 
-  mutate(time = ISOweek::ISOweek2date(paste0(Year,"-W", epiWeek, "-1")))
+  mutate(time = MMWRweek::MMWRweek2Date(Year, epiWeek))
 
+# need to collapse the plotIDs where both species are observed
+# but need to retain all other NAs for weeks without observations
+both.spp.filter <- tick.target.data %>%
+  group_by(Year, epiWeek, yearWeek, plotID, siteID, nlcdClass, time,
+           decimalLatitude, decimalLongitude, elevation, totalSampledArea) %>%
+  filter(plotID %in% ix.plots[which(ix.plots %in% amb.plots)])
 
+# separate species
+ix.from.both <- both.spp.filter %>% 
+  select(-Amblyomma_americanum)
+aa.from.both <- both.spp.filter %>% 
+  select(-Ixodes_scapularis)
+
+# join species and keep the good row
+both.spp.join <- left_join(ix.from.both, aa.from.both) %>% 
+  filter(!is.na(Ixodes_scapularis), !is.na(Amblyomma_americanum))
+
+# put everything back together 
+tick.target.data <- tick.target.data %>% 
+  filter(!(plotID %in% ix.plots[which(ix.plots %in% amb.plots)])) %>% 
+  bind_rows(., both.spp.join)
 
 ###########################################
 # ENVIORNMENTAL VARIABLES
@@ -856,19 +877,16 @@ weekly.envionmental.data <- left_join(weekly.rh.data,
                                       by = c("siteID", "Year", "epiWeek", "yearWeek"))
 
 
+# make sure epiWeek col is character
+tick.target.data <- tick.target.data %>% 
+  mutate(epiWeek = as.character(epiWeek),
+         yearWeek = as.character(yearWeek))
+
 # join environmental to tick data
-tick.target.data$yearWeek <- as.character(tick.target.data$yearWeek)
 target.data.final <- left_join(tick.target.data,
                                weekly.envionmental.data,
                                by = c("siteID", "Year", "epiWeek", "yearWeek"))
 
-# create specific target column
-#target.data.final <- target.data.final %>% 
-#  mutate(specificTarget = paste(targetSpecies, plotID, sep = "_")) 
-
-
-# pull(target.data.final, specificTarget) %>% 
-#   table()
 
 # Forecasts are submitted at the end of each month March - October.
 # Therefore the start week for the forecast changes depending on when
