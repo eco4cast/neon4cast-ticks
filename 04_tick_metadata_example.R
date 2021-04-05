@@ -1,18 +1,23 @@
 #### create forecast metadata ####
+# this example is for the ensemble csv forecast
 
 library(EML)
 library(tidyverse)
 library(lubridate)
 
-fx.dir <- "Random_Walk_Fits/2019-10/"
-fx.file <- "ticks-2019-03-04-tickGlobalNull_RandomWalk"
+fx.dir <- "Random_Walk_Fits/2019-10/" # where forecast is stored
+fx.file <- "ticks-2019-03-04-tickGlobalNull_RandomWalk" # file name
 file.dest <- file.path(fx.dir, paste0(fx.file, ".csv.gz"))
 fx <- read.csv(file.dest)
+
+# pull out time
 time <- fx %>% 
   pull(time) %>% 
   ymd() %>% 
   unique() %>% 
   sort()
+
+# get number of ensembles
 n.ens <- fx %>% 
   pull(ensemble) %>% 
   max()
@@ -25,10 +30,10 @@ lat.lon <- ticks %>%
          decimalLongitude = decimalLongitude) %>% 
   distinct()
 
-forecast_project_id <- "tickGlobalNull_RandomWalk"
+forecast_project_id <- "tickGlobalNull_RandomWalk" # project or team name
 forecast_model_id <- "7e9c476fb483e7a77b4286db6bee34542aea6626" # last commit from model development
-forecast_iteration_id <- time[1] 
-forecast_issue_time <- lubridate::today() # or the day the forecast was run
+forecast_iteration_id <- time[1] # forecasts are submitted monthly, iteration id is the first time in each forecast
+forecast_issue_time <- "2021-03-30" # the day the forecast was run
 
 attributes <- tibble::tribble(
   ~attributeName,           ~attributeDefinition,                          ~unit,                  ~formatString, ~numberType, ~definition,
@@ -37,8 +42,8 @@ attributes <- tibble::tribble(
   "plotID",                 "[dimension]{location label}",                "dimensionless",         "SSSS_XXX",   "character",  NA,
   "ensemble",               "[dimension]{index of ensemble member}",      "dimensionless",         NA,           "integer",    NA,
   "obs_flag",               "[dimension]{observation error}",             "dimensionless",         NA,           "integer",    NA,
-  "Ixodes_scapularis",      "[variable]{Pop. abundace of I. scap.}",      "number",                NA,           "integer",    NA,
-  "Amblyomma_americanum",   "[variable]{Pop. abundace of A. amer.}",      "number",                NA,           "integer",    NA,
+  "ixodes_scapularis",      "[variable]{Pop. abundace of I. scap.}",      "number",                NA,           "integer",    NA,
+  "amblyomma_americanum",   "[variable]{Pop. abundace of A. amer.}",      "number",                NA,           "integer",    NA,
   "forecast",               "[flag]{whether time step assimilated data}", "dimensionless",         NA,           "integer",    NA,
   "data_assimilation",      "[flag]{whether time step assimilated data}", "dimensionless",         NA,           "integer",    NA
 ) 
@@ -125,7 +130,7 @@ additionalMetadata <- eml$additionalMetadata(
         # Possible values: absent, present, data_driven, propagates, assimilates
         status = "propagates",
         # Number of parameters / dimensionality
-        complexity = 1  ## process error  
+        complexity = 1  ## one process error term 
       ),
       drivers = list(
         status = "absent" # no drivers in null model
@@ -134,7 +139,7 @@ additionalMetadata <- eml$additionalMetadata(
         status = "absent", # no parameters in null model
       ),
       random_effects = list(
-        status = "absent"
+        status = "absent" # no random effects in null model
       ),
       process_error = list(
         status = "propagates",
