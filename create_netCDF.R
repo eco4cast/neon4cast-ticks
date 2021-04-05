@@ -19,7 +19,7 @@ create_netCDF <- function(fx, ncfname, data.assimilation,
                           check.units = TRUE){
   # make sequences
   ensembles <- 1:dim(fx)[1] # number of ensembles (draws from joint posterior)
-  times <- seq(from = forecast.issue.time, by = 1, length = dim(fx)[2])
+  timedim.vals <- 0:(dim(fx)[2] - 1)
 
   ### Set dimensions ###
   # size of timestep, with units and start date
@@ -28,7 +28,7 @@ create_netCDF <- function(fx, ncfname, data.assimilation,
   # specified start date, in this case forecast.issue.time
   timedim <- ncdim_def("time",
                        units = paste('weeks since', forecast.issue.time),
-                       vals = as.numeric(times - forecast.issue.time),
+                       vals = timedim.vals,
                        longname = 'timestep')                                           
   ensdim <- ncdim_def("ensemble",             
                       units = "",
