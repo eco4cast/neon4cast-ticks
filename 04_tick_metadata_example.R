@@ -130,7 +130,7 @@ additionalMetadata <- eml$additionalMetadata(
         # Possible values: absent, present, data_driven, propagates, assimilates
         status = "propagates",
         # Number of parameters / dimensionality
-        complexity = 1  ## one process error term 
+        complexity = 28  ## one process error term per target (species x plot) 
       ),
       drivers = list(
         status = "absent" # no drivers in null model
