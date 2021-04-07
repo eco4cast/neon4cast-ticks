@@ -20,12 +20,12 @@
 library(tidyverse)
 library(rjags)
 library(ncdf4)
-library(EML)
+# library(EML)
 library(uuid)
-library(emld)
+# library(emld)
 library(lubridate)
 library(MMWRweek)
-emld::eml_version("eml-2.2.0")
+# emld::eml_version("eml-2.2.0")
 
 efi_server <- TRUE
 

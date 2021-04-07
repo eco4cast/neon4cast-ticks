@@ -41,8 +41,6 @@ Sys.setenv("NEONSTORE_HOME" = "/efi_neon_challenge/neonstore")
 Sys.setenv("NEONSTORE_DB" = "/efi_neon_challenge/neonstore")
 library(neonstore)
 
-
-
 efi_server <- TRUE
 
 ###########################################
@@ -643,7 +641,6 @@ amb.plots <- c("SCBI_013","SERC_001","SERC_005","SERC_006","SERC_002","SERC_012"
 ix.plots <- c("BLAN_012","BLAN_005","SCBI_013","SCBI_002","SERC_001","SERC_005","SERC_006",
               "SERC_012","ORNL_007")
 
-
 # filter to just target data
 # FILTER TO EACH SPECIES FIRST THEN COMBINE
 ambame.target.data <- tck_merged_final %>% 
@@ -658,7 +655,7 @@ ambame.target.data <- tck_merged_final %>%
          plotID = plotID) %>%   
   select(all_of(c("Year", "epiWeek", "yearWeek", "targetSpecies", "targetCount", 
                   "plotID", "siteID", "nlcdClass", "decimalLatitude", 
-                  "decimalLongitude", "elevation", "totalSampledArea")))
+                  "decimalLongitude", "elevation", "totalSampledArea", "eventID")))
 ix.target.data <- tck_merged_final %>% 
   filter(LifeStage == "Nymph",
          acceptedTaxonID == "IXOSCA",
@@ -671,98 +668,10 @@ ix.target.data <- tck_merged_final %>%
          plotID = plotID) %>%   
   select(all_of(c("Year", "epiWeek", "yearWeek", "targetSpecies", "targetCount", 
                   "plotID", "siteID", "nlcdClass", "decimalLatitude", 
-                  "decimalLongitude", "elevation", "totalSampledArea")))
+                  "decimalLongitude", "elevation", "totalSampledArea", "eventID")))
 
 # both species in one tibble
 tick.target.data <- bind_rows(ambame.target.data, ix.target.data)
-
-# next we need to fill in the data set for weeks that are not represented
-# in tick.target.data - only has weeks that are sampled, we want to add
-# all weeks from the first sampling event to the last sampling event of each year
-
-# find the start and end week for each plot each year
-start.week <- tick.target.data %>% 
-  group_by(plotID, Year) %>% 
-  summarise(startWeek = min(yearWeek))
-end.week <- tick.target.data %>% 
-  group_by(plotID, Year) %>% 
-  summarise(endWeek = max(yearWeek))
-
-for(spp in 1:2){ 
-  # go through each plot for each species
-  
-  if(spp == 1){
-    targetPlot.vec <- amb.plots
-    spp.fill <- "Amblyomma_americanum"
-  } else {
-    targetPlot.vec <- ix.plots
-    spp.fill <- "Ixodes_scapularis"
-  }
-  
-  for(i in seq_along(targetPlot.vec)) {
-    plot.subset <- targetPlot.vec[i]
-    
-    # first week of sampling each year
-    first.weeks <- start.week %>%
-      filter(plotID == plot.subset)
-    
-    # last week of sampling each year
-    last.weeks <- end.week %>%
-      filter(plotID == plot.subset)
-    
-    # all years sampling occurred in the plot
-    year.vec <- pull(last.weeks, Year)
-    
-    # plot has the same characteristics across rows
-    # pulling out a row for the subsetted plot
-    # using these to fill in data set below
-    row.fill <- tick.target.data %>% 
-      filter(plotID == plot.subset) %>% 
-      select(all_of(c("siteID", "nlcdClass", "decimalLatitude", "decimalLongitude", "elevation"))) %>% 
-      slice(1)
-    
-    # weeks that have observations, for removing duplicates below
-    existing.yearWeeks <- tick.target.data %>% 
-      filter(plotID == plot.subset) %>%
-      filter(targetSpecies == spp.fill) %>% 
-      pull(yearWeek) %>% 
-      unique() %>% 
-      as.numeric()
-    
-    # go through each year in the subsetted plot
-    for (y in year.vec) {
-      
-      # beginning week in year y
-      begin <- first.weeks %>%
-        filter(Year == y) %>%
-        pull(startWeek) 
-      
-      # end week in year y
-      end <- last.weeks %>%
-        filter(Year == y) %>%
-        pull(endWeek)
-      
-      # week sequence +/- 1, don't want to duplicate weeks
-      # also need to remove weeks that have observations
-      week.seq <- seq(begin + 1, end - 1) 
-      week.seq <- week.seq[which(!week.seq %in% existing.yearWeeks)] 
-      
-      # add filler rows, columns not specified get NA
-      tick.target.data <- tick.target.data %>% 
-        add_row(yearWeek = week.seq, 
-                plotID = plot.subset,
-                targetSpecies = spp.fill,
-                Year = y,
-                epiWeek = str_extract(week.seq, "\\d{2}$"), # last two digits in week.seq = epiWeek number
-                siteID = pull(row.fill, siteID),
-                nlcdClass = pull(row.fill, nlcdClass),
-                decimalLatitude = pull(row.fill, decimalLatitude),
-                decimalLongitude = pull(row.fill, decimalLongitude),
-                elevation = pull(row.fill, elevation))
-      
-    }
-  }
-}
 
 tick.target.data <- tick.target.data %>% 
   group_by(Year, epiWeek, plotID) %>%
@@ -792,7 +701,91 @@ both.spp.join <- left_join(ix.from.both, aa.from.both) %>%
 # put everything back together 
 tick.target.data <- tick.target.data %>% 
   filter(!(plotID %in% ix.plots[which(ix.plots %in% amb.plots)])) %>% 
-  bind_rows(., both.spp.join)
+  bind_rows(., both.spp.join) %>% 
+  mutate(epiWeek = as.character(epiWeek)) %>% 
+  distinct(eventID, .keep_all = TRUE)
+
+# next we need to fill in the data set for weeks that are not represented
+# in tick.target.data - only has weeks that are sampled, we want to add
+# all weeks from the first sampling event to the last sampling event of each year
+
+tick.plots <- tick.target.data %>% 
+  pull(plotID) %>% 
+  unique()
+
+# find the start and end week for each plot each year
+start.week <- tick.target.data %>% 
+  group_by(plotID, Year) %>% 
+  summarise(startWeek = min(yearWeek))
+end.week <- tick.target.data %>% 
+  group_by(plotID, Year) %>% 
+  summarise(endWeek = max(yearWeek))
+
+for(i in seq_along(tick.plots)){
+  plot.subset <- tick.plots[i]
+  
+  # first week of sampling each year
+  first.weeks <- start.week %>%
+    filter(plotID == plot.subset)
+  
+  # last week of sampling each year
+  last.weeks <- end.week %>%
+    filter(plotID == plot.subset)
+  
+  # all years sampling occurred in the plot
+  year.vec <- pull(last.weeks, Year)
+  
+  # plot has the same characteristics across rows
+  # pulling out a row for the subsetted plot
+  # using these to fill in data set below
+  row.fill <- tick.target.data %>% 
+    ungroup() %>% 
+    filter(plotID == plot.subset) %>% 
+    select(all_of(c("time", "siteID", "nlcdClass", "decimalLatitude", "decimalLongitude", "elevation"))) %>% 
+    slice(1)
+  
+  # weeks that have observations, for removing duplicates below
+  existing.yearWeeks <- tick.target.data %>% 
+    filter(plotID == plot.subset) %>%
+    pull(yearWeek) %>% 
+    unique() %>% 
+    as.numeric()
+  
+  # go through each year in the subsetted plot
+  for (y in year.vec) {
+    
+    # beginning week in year y
+    begin <- first.weeks %>%
+      filter(Year == y) %>%
+      pull(startWeek) 
+    
+    # end week in year y
+    end <- last.weeks %>%
+      filter(Year == y) %>%
+      pull(endWeek)
+    
+    # week sequence +/- 1, don't want to duplicate weeks
+    # also need to remove weeks that have observations
+    week.seq <- seq(begin + 1, end - 1) 
+    week.seq <- week.seq[which(!week.seq %in% existing.yearWeeks)] 
+    
+    # add filler rows, columns not specified get NA
+    tick.target.data <- tick.target.data %>% 
+      ungroup() %>% 
+      add_row(yearWeek = week.seq, 
+              plotID = plot.subset,
+              Year = y,
+              epiWeek = str_extract(week.seq, "\\d{2}$"), # last two digits in week.seq = epiWeek number
+              siteID = pull(row.fill, siteID),
+              nlcdClass = pull(row.fill, nlcdClass),
+              decimalLatitude = pull(row.fill, decimalLatitude),
+              decimalLongitude = pull(row.fill, decimalLongitude),
+              elevation = pull(row.fill, elevation),
+              time = pull(row.fill, time))
+    
+  }
+  
+}
 
 ###########################################
 # ENVIORNMENTAL VARIABLES
@@ -887,6 +880,8 @@ target.data.final <- left_join(tick.target.data,
                                weekly.envionmental.data,
                                by = c("siteID", "Year", "epiWeek", "yearWeek"))
 
+target.data.final <- target.data.final %>% 
+  filter(Year <= 2019) 
 
 # Forecasts are submitted at the end of each month March - October.
 # Therefore the start week for the forecast changes depending on when
@@ -940,7 +935,9 @@ target.data.final <- target.data.final %>%
   group_by(plotID) %>% 
   arrange(yearWeek, .by_group = TRUE) %>% 
   rename(amblyomma_americanum = Amblyomma_americanum,
-         ixodes_scapularis = Ixodes_scapularis)
+         ixodes_scapularis = Ixodes_scapularis) %>% 
+  mutate(time = MMWRweek::MMWRweek2Date(Year, as.numeric(epiWeek))) %>% 
+  select(-eventID)
 
 # write targets to csv
 write_csv(target.data.final,
