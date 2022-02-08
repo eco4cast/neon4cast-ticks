@@ -38,8 +38,8 @@ if(!"neonstore" %in% installed.packages()){
   remotes::install_github("cboettig/neonstore", ref = "patch/api-updates")
 }
 
-# Sys.setenv("NEONSTORE_HOME" = "/efi_neon_challenge/neonstore")
-# Sys.setenv("NEONSTORE_DB" = "/efi_neon_challenge/neonstore")
+Sys.setenv("NEONSTORE_HOME" = "/efi_neon_challenge/neonstore")
+Sys.setenv("NEONSTORE_DB" = "/efi_neon_challenge/neonstore")
 library(neonstore)
 
 efi_server <- TRUE
