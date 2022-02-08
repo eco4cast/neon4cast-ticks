@@ -28,15 +28,10 @@ library(MMWRweek) # for converting from date to MMWR week
 
 # select target species and life stage
 target.species <- "Amblyomma americanum"
-# target.species <- "Ixodes scapularis"
 target.lifestage <- "Nymph"
 
-# subset to the sites we know there to be "good" observations
-if(target.species == "Ixodes scapularis"){
-  target.sites <- c("BLAN","HARV","ORNL","SCBI","SERC","TREE")  
-} else if(target.species == "Amblyomma americanum"){
-  target.sites <- c("BLAN","KONZ","LENO","ORNL","OSBS","SCBI","SERC","TALL","UKFS")  
-}
+sites.df <- read_csv("Ticks_NEON_Field_Site_Metadata_20210928.csv")
+target.sites <- sites.df %>% pull(field_site_id)
 
 if(!"neonstore" %in% installed.packages()){
   library(remotes)
@@ -51,9 +46,8 @@ efi_server <- TRUE
 
 # get data from neon
 product <- "DP1.10093.001"
-sites <- c("BLAN","HARV","KONZ","LENO","ORNL","OSBS","SCBI","SERC","STEI","TALL","TREE","UKFS")
 neon_download(product = product,
-              site = sites)
+              site = target.sites)
 
 tick.field.raw <- neon_read("tck_fielddata-basic", keep_filename = TRUE)
 tick.taxon.raw <- neon_read("tck_taxonomyProcessed-basic")
@@ -65,7 +59,7 @@ tick.field <- tick.field.raw %>%
   mutate(time = floor_date(collectDate, unit = "day")) %>% 
   unite(namedLocation, time, col = "occasionID", sep = "_")
 
-
+# combine adults into single category and make wide to get zero counts
 tick.taxon.wide <- tick.taxon.raw %>% 
   filter(sampleCondition == "OK") %>% # remove taxonomy samples with quality issues
   mutate(sexOrAge = if_else(sexOrAge == "Female" | sexOrAge == "Male", 
@@ -80,6 +74,7 @@ tick.taxon.wide <- tick.taxon.raw %>%
               values_fn = {sum}, # duplicates occur because of Adults that where F/M - add them 
               values_fill = 0)
 
+# join taxonomy and field data
 tick.joined <- left_join(tick.taxon.wide, tick.field, by = "occasionID") %>% 
   select(-NA_NA, -geodeticDatum, -samplingImpractical, -targetTaxaPresent,
          -adultCount, -nymphCount, -larvaCount, -samplingProtocolVersion, 
@@ -107,34 +102,26 @@ tick.long <- tick.joined %>%
 # add taxon ids
 tick.long <- left_join(tick.long, taxon.ids, by = "acceptedTaxonID") 
 
-tick.out <- tick.long %>% 
-  filter(lifeStage == target.lifestage, 
-         scientificName == target.species,
-         grepl("Forest", nlcdClass)) %>% 
-  mutate(time = floor_date(collectDate, unit = "day"),
-         time = ymd(time)) %>% 
-  select(time, processedCount, totalSampledArea, scientificName, siteID, samplingMethod)
-
-# table of sites, get lat lon
-neon.sites <- neon_sites() 
-neon.sites.ll <- neon.sites %>% 
-  filter(siteCode %in% sites) %>% 
-  select(siteCode, siteLatitude, siteLongitude) %>% 
-  rename("siteID" = siteCode)
-
-tick.standard <- tick.out %>%
-  mutate(totalSampledArea = as.numeric(totalSampledArea)) %>% 
-  group_by(siteID, time, scientificName) %>%
-  summarise(totalCount = sum(processedCount),
-            totalArea = sum(totalSampledArea),
-            numPlots = n(),
-            standardCount = totalCount / totalArea * 1600) %>% 
-  mutate(year = year(time),
-         mmwrWeek = MMWRweek(time)$MMWRweek,
+# standardize the data and subset to targets
+tick.standard <- tick.long %>% 
+  filter(siteID %in% target.sites, # sites we want
+         lifeStage == target.lifestage, # life stage we want
+         scientificName == target.species, # species we want
+         grepl("Forest", nlcdClass)) %>%  # forest plots
+  mutate(date = floor_date(collectDate, unit = "day"),
+         date = ymd(date),
+         year = year(date),
+         mmwrWeek = MMWRweek(date)$MMWRweek,
          time = MMWRweek2Date(year, mmwrWeek)) %>% 
-  rename("Amblyomma americanum" = standardCount) %>% 
+  select(time, processedCount, totalSampledArea, siteID) %>%
+  mutate(totalSampledArea = as.numeric(totalSampledArea)) %>% 
+  group_by(siteID, time) %>%
+  summarise(totalCount = sum(processedCount), # all counts in a week
+            totalArea = sum(totalSampledArea),# total area surveyed in a week
+            `Amblyomma americanum` = totalCount / totalArea * 1600) %>% # scale to the size of a plot
+  mutate(mmwrWeek = MMWRweek(time)$MMWRweek) %>% 
   arrange(siteID, time) %>% 
-  filter(siteID %in% target.sites) %>% 
+  filter() %>% 
   select(time, mmwrWeek, siteID, `Amblyomma americanum`)
 
 # in case NEON makes a provisional data release during the challenge
