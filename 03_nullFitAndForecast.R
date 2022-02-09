@@ -58,28 +58,35 @@ hist_means <- function(df, target.weeks){
   return(gap.filled)
 }
 
+
+
 create_ensembles <- function(df, nmc = 500, forecast.year = 2021) {
   
-  # make ensemble data frame
-  ens <- map_dfr(1:nrow(df),
-                 function(i)
-                   data.frame(
-                     siteID = df$siteID[[i]],
-                     mmwrWeek = df$mmwrWeek[[i]],
-                     ensemble = 1:nmc,
-                     density = rnorm(nmc,
-                                     df$mean[[i]],
-                                     df$sd[[i]])
-                   ))
+  # simulate error from the log normal (to keep the zero bound)
+  # need to calculate meanLog and sdLog from the normal mean and sd
+  log_norm_sim <- function(df, i){
+    mu <- df$mean[[i]] + 1
+    sd <- df$sd[[i]]
+    meanLog <- log(mu^2 / sqrt(sd^2 + mu^2))
+    sdLog <- sqrt(log(1 + (sd^2 / mu^2)))
+    sim <- data.frame(
+      siteID = df$siteID[[i]],
+      mmwrWeek = df$mmwrWeek[[i]],
+      ensemble = 1:nmc,
+      density = rlnorm(nmc, meanLog, sdLog)
+    )
+    return(sim)
+  }
   
-  # can't have zero ticks and rename
-  out <- ens %>%
+  # make ensemble data frame, create/rename columns as needed
+  ens <- 1:nrow(df) %>% 
+    map_dfr(~ log_norm_sim(df, .x)) %>%
     as_tibble() %>%
     mutate(year = forecast.year,
            time = MMWRweek2Date(year, mmwrWeek)) %>%
     rename(`Amblyomma americanum` = density)
   
-  return(out)
+  return(ens)
   
 }
 
