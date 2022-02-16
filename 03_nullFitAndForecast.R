@@ -112,17 +112,8 @@ file.name <- paste0(theme_name, "-", time, "-", team_name, ".csv.gz")
 
 write_csv(forecast.submit, file.name)
 
-#'Publish the forecast automatically.  Run only on EFI Challenge server
-if(efi_server){
-  source("../neon4cast-shared-utilities/publish.R")
-  publish(code = "03_nullFitAndForecast.R",
-          data_in = "ticks-targets.csv.gz",
-          data_out = file.name,
-          prefix = "ticks/",
-          bucket = "forecasts",
-          registries = "https://hash-archive.carlboettiger.info")
-}
-
-
+neon4cast::submit(forecast_file = forecast_file, 
+                  metadata = NULL, 
+                  ask = FALSE)
 
 
