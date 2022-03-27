@@ -2,5 +2,5 @@ Package: tick_theme
 Version: 0.1.0
 Imports: tidyverse, neonstore, scoringRules, openssl, stringi, vroom, emld, 
          contentid, jsonld, jsonlite, aws.s3, prov, ISOweek, here, stringr,
-         parallel, remotes, lubridate, rjags, ncdf4, EML, uuid
+         parallel, remotes, lubridate, rjags, ncdf4, EML, uuid, MMWRweek
 Remotes: cboettig/prov

@@ -38,8 +38,6 @@ if(!"neonstore" %in% installed.packages()){
   remotes::install_github("cboettig/neonstore", ref = "patch/api-updates")
 }
 
-Sys.setenv("NEONSTORE_HOME" = "/efi_neon_challenge/neonstore")
-Sys.setenv("NEONSTORE_DB" = "/efi_neon_challenge/neonstore")
 library(neonstore)
 
 efi_server <- TRUE
@@ -137,6 +135,8 @@ tick.targets <- tick.standard %>%
 # write targets to csv
 write_csv(tick.targets,
           file = "ticks-targets.csv.gz")
+
+
 
 if(efi_server){
   source("../neon4cast-shared-utilities/publish.R")

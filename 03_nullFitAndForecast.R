@@ -12,8 +12,7 @@ library(MMWRweek)
 efi_server <- TRUE
 
 # first load the target data set
-data <- read_csv("ticks-targets.csv.gz")
-# data <- read_csv("https://data.ecoforecast.org/targets/ticks/ticks-targets.csv.gz", guess_max = 1e6)
+data <- read_csv("https://data.ecoforecast.org/targets/ticks/ticks-targets.csv.gz", guess_max = 1e6)
 sites <- data %>% 
   pull(siteID) %>% 
   unique()
@@ -111,6 +110,8 @@ team_name <- "EFI_avg_null"
 file.name <- paste0(theme_name, "-", time, "-", team_name, ".csv.gz")
 
 write_csv(forecast.submit, file.name)
+
+
 
 neon4cast::submit(forecast_file = forecast_file, 
                   metadata = NULL, 
