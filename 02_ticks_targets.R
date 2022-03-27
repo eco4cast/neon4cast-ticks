@@ -27,7 +27,7 @@ library(uuid) # for unique IDs
 library(MMWRweek) # for converting from date to MMWR week
 
 # select target species and life stage
-target.species <- "Amblyomma americanum"
+target.species <- "amblyomma_americanum" #"Amblyomma americanum"
 target.lifestage <- "Nymph"
 
 sites.df <- read_csv("Ticks_NEON_Field_Site_Metadata_20210928.csv")
@@ -116,11 +116,11 @@ tick.standard <- tick.long %>%
   group_by(siteID, time) %>%
   summarise(totalCount = sum(processedCount), # all counts in a week
             totalArea = sum(totalSampledArea),# total area surveyed in a week
-            `Amblyomma americanum` = totalCount / totalArea * 1600) %>% # scale to the size of a plot
+            amblyomma_americanum = totalCount / totalArea * 1600) %>% # scale to the size of a plot
   mutate(mmwrWeek = MMWRweek(time)$MMWRweek) %>% 
   arrange(siteID, time) %>% 
   filter() %>% 
-  select(time, mmwrWeek, siteID, `Amblyomma americanum`)
+  select(time, mmwrWeek, siteID, amblyomma_americanum)
 
 # in case NEON makes a provisional data release during the challenge
 # need to make sure that we filter out 2021 data that is in the "future"

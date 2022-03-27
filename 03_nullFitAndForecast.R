@@ -83,7 +83,7 @@ create_ensembles <- function(df, nmc = 500, forecast.year = 2021) {
     as_tibble() %>%
     mutate(year = forecast.year,
            time = MMWRweek2Date(year, mmwrWeek)) %>%
-    rename(ambloyomma_americanum = density)
+    rename(amblyomma_americanum = density)
   
   return(ens)
   
