@@ -34,8 +34,8 @@ hist_means <- function(df, target.weeks){
   
   weekly.means <- df %>% 
     group_by(siteID, mmwrWeek) %>% 
-    summarise(mean = mean(`Amblyomma americanum`),
-              sd = sd(`Amblyomma americanum`))
+    summarise(mean = mean(amblyomma_americanum),
+              sd = sd(amblyomma_americanum))
   
   
   # need to fill in NAs and need to do on all data before sub-setting to target weeks
