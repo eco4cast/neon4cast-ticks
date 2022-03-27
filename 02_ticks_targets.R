@@ -27,7 +27,7 @@ library(uuid) # for unique IDs
 library(MMWRweek) # for converting from date to MMWR week
 
 # select target species and life stage
-target.species <- "amblyomma_americanum" #"Amblyomma americanum"
+target.species <- "Amblyomma americanum" # NEON species name
 target.lifestage <- "Nymph"
 
 sites.df <- read_csv("Ticks_NEON_Field_Site_Metadata_20210928.csv")
