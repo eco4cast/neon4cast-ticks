@@ -140,7 +140,8 @@ write_csv(tick.targets,
 
 if(efi_server){
   
-  challengeci:::publish(code = c("02_ticks_targets.R"),
+  source("../challenge-ci/R/publish.R")
+  publish(code = c("02_ticks_targets.R"),
           data_out = c("ticks-targets.csv.gz"),
           prefix = "ticks/",
           bucket = "targets",
