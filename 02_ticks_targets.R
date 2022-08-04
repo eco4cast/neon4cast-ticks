@@ -1,5 +1,7 @@
 # Download and clean tick data 
-
+Sys.setenv("NEONSTORE_HOME" = "/home/rstudio/data/neonstore")
+#Sys.setenv("NEONSTORE_DB" = "/home/rstudio/data/neonstore")
+#Sys.setenv("NEONSTORE_DB")
 
 ### Script to create tidy dataset of NEON tick abundances 
 ### To be used for the RCN Tick Forecasting Challenge 
@@ -43,9 +45,9 @@ library(neonstore)
 efi_server <- TRUE
 
 # get data from neon
-product <- "DP1.10093.001"
-neon_download(product = product,
-              site = target.sites)
+#product <- "DP1.10093.001"
+#neon_download(product = product,
+#              site = target.sites)
 
 tick.field.raw <- neon_read("tck_fielddata-basic", keep_filename = TRUE)
 tick.taxon.raw <- neon_read("tck_taxonomyProcessed-basic")
@@ -144,7 +146,7 @@ if(efi_server){
   publish(code = c("02_ticks_targets.R"),
           data_out = c("ticks-targets.csv.gz"),
           prefix = "ticks/",
-          bucket = "targets",
+          bucket = "neon4cast-targets",
           registries = "https://hash-archive.carlboettiger.info")
 }
 

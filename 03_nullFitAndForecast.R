@@ -12,7 +12,7 @@ library(MMWRweek)
 efi_server <- TRUE
 
 # first load the target data set
-data <- read_csv("https://data.ecoforecast.org/targets/ticks/ticks-targets.csv.gz", guess_max = 1e6)
+data <- read_csv("https://data.ecoforecast.org/neon4cast-targets/ticks/ticks-targets.csv.gz", guess_max = 1e6)
 sites <- data %>% 
   pull(siteID) %>% 
   unique()

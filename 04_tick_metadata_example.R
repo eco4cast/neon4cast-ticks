@@ -23,7 +23,7 @@ n.ens <- fx %>%
   max()
 
 # get lat.lon
-ticks <- read_csv("https://data.ecoforecast.org/targets/ticks/ticks-targets.csv.gz")
+ticks <- read_csv("https://data.ecoforecast.org/neon4cast-targets/ticks/ticks-targets.csv.gz")
 lat.lon <- ticks %>% 
   select(c(siteID, decimalLatitude, decimalLongitude)) %>% 
   mutate(decimalLatitude = decimalLatitude, 
