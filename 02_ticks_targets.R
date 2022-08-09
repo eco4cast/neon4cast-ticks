@@ -132,19 +132,21 @@ run.mmwrWeek <- MMWRweek(run.date)$MMWRweek
 challenge.time <- MMWRweek2Date(year(run.date), run.mmwrWeek)
 
 tick.targets <- tick.standard %>% 
-  filter(time < challenge.time)
+  filter(time < challenge.time) |> 
+  rename(site_id = siteID,
+         observed = amblyomma_americanum) |> 
+  mutate(variable = "amblyomma_americanum")
+  
 
 # write targets to csv
 write_csv(tick.targets,
           file = "ticks-targets.csv.gz")
 
-
-
 if(efi_server){
   
   source("../challenge-ci/R/publish.R")
   publish(code = c("02_ticks_targets.R"),
-          data_out = c("ticks-targets.csv.gz"),
+          data_out = "ticks-targets.csv.gz",
           prefix = "ticks/",
           bucket = "neon4cast-targets",
           registries = "https://hash-archive.carlboettiger.info")
