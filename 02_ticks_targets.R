@@ -119,10 +119,10 @@ tick.standard <- tick.long %>%
   summarise(totalCount = sum(processedCount), # all counts in a week
             totalArea = sum(totalSampledArea),# total area surveyed in a week
             amblyomma_americanum = totalCount / totalArea * 1600) %>% # scale to the size of a plot
-  mutate(mmwrWeek = MMWRweek(time)$MMWRweek) %>% 
+  mutate(mmwr_week = MMWRweek(time)$MMWRweek) %>% 
   arrange(siteID, time) %>% 
   filter() %>% 
-  select(time, mmwrWeek, siteID, amblyomma_americanum)
+  select(time, mmwr_week, siteID, amblyomma_americanum)
 
 # in case NEON makes a provisional data release during the challenge
 # need to make sure that we filter out 2021 data that is in the "future"
@@ -135,7 +135,8 @@ tick.targets <- tick.standard %>%
   filter(time < challenge.time) |> 
   rename(site_id = siteID,
          observed = amblyomma_americanum) |> 
-  mutate(variable = "amblyomma_americanum")
+  mutate(variable = "amblyomma_americanum") |> 
+  select(time, site_id, variable, observed, mmwr_week)
   
 
 # write targets to csv

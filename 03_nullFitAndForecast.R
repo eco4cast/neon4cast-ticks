@@ -14,7 +14,7 @@ efi_server <- TRUE
 # first load the target data set
 data <- read_csv("https://data.ecoforecast.org/neon4cast-targets/ticks/ticks-targets.csv.gz", guess_max = 1e6)
 sites <- data %>% 
-  pull(siteID) %>% 
+  pull(site_id) %>% 
   unique()
 
 
@@ -33,25 +33,25 @@ forecast.weeks <- MMWRweek(fx.time)$MMWRweek
 hist_means <- function(df, target.weeks){
   
   weekly.means <- df %>% 
-    group_by(siteID, mmwrWeek) %>% 
-    summarise(mean = mean(amblyomma_americanum),
-              sd = sd(amblyomma_americanum))
+    group_by(site_id, mmwr_week) %>% 
+    summarise(mean = mean(observed),
+              sd = sd(observed))
   
   
   # need to fill in NAs and need to do on all data before sub-setting to target weeks
-  filler.tb <- tibble(siteID = rep(sites, length(10:44)),
-                      mmwrWeek = rep(10:44, each = length(sites)))
+  filler.tb <- tibble(site_id = rep(sites, length(10:44)),
+                      mmwr_week = rep(10:44, each = length(sites)))
   
-  all.weeks <- left_join(filler.tb, weekly.means, by = c("siteID", "mmwrWeek")) %>% 
-    arrange(siteID, mmwrWeek)
+  all.weeks <- left_join(filler.tb, weekly.means, by = c("site_id", "mmwr_week")) %>% 
+    arrange(site_id, mmwr_week)
   
   # not all weeks will be accounted for - linearly interpolate if missing
   gap.filled <- all.weeks %>%
-    group_by(siteID) %>%
-    mutate(mean = approx(x = mmwrWeek, y = mean, xout = mmwrWeek, rule = 2)$y,
+    group_by(site_id) %>%
+    mutate(mean = approx(x = mmwr_week, y = mean, xout = mmwr_week, rule = 2)$y,
            sd = replace_na(sd, mean(sd, na.rm = TRUE)),
            sd = replace(sd, sd == 0, mean(sd))) %>% 
-    filter(mmwrWeek %in% target.weeks)
+    filter(mmwr_week %in% target.weeks)
   
   # now each week has a mean - sort of
   return(gap.filled)
@@ -69,8 +69,8 @@ create_ensembles <- function(df, nmc = 500, forecast.year = 2021) {
     meanLog <- log(mu^2 / sqrt(sd^2 + mu^2))
     sdLog <- sqrt(log(1 + (sd^2 / mu^2)))
     sim <- data.frame(
-      siteID = df$siteID[[i]],
-      mmwrWeek = df$mmwrWeek[[i]],
+      site_id = df$site_id[[i]],
+      mmwr_week = df$mmwr_week[[i]],
       ensemble = 1:nmc,
       density = rlnorm(nmc, meanLog, sdLog)
     )
@@ -82,7 +82,7 @@ create_ensembles <- function(df, nmc = 500, forecast.year = 2021) {
     map_dfr(~ log_norm_sim(df, .x)) %>%
     as_tibble() %>%
     mutate(year = forecast.year,
-           time = MMWRweek2Date(year, mmwrWeek)) %>%
+           time = MMWRweek2Date(year, mmwr_week)) %>%
     rename(amblyomma_americanum = density)
   
   return(ens)
@@ -97,10 +97,10 @@ ensembles <- create_ensembles(forecast)
 
 # finalize for EFI submission
 forecast.submit <- ensembles %>% 
-  select(-year, -mmwrWeek) %>% 
-  mutate(forecast = 1,
-         data_assimilation = 0)
-
+  select(-year, -mmwr_week) %>% 
+  rename(predicted = amblyomma_americanum) |> 
+  mutate(variable = "amblyomma_americanum") |> 
+  select(time, site_id, variable, ensemble, predicted)
 
 # Save file as CSV in the EFI format
 # [theme_name]-[time]-[team_name].csv
