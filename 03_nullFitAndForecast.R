@@ -100,7 +100,7 @@ forecast.submit <- ensembles %>%
   select(-year, -mmwr_week) %>% 
   rename(predicted = amblyomma_americanum) |> 
   mutate(variable = "amblyomma_americanum") |> 
-  mutuate(start_time = lubridate::as_date(min(time)) - lubridate::weeks(1)) |> 
+  mutate(start_time = lubridate::as_date(min(time)) - lubridate::weeks(1)) |> 
   select(time, start_time, site_id, variable, ensemble, predicted)
 
 # Save file as CSV in the EFI format
